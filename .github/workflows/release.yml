@@ -20,10 +20,21 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      - uses: actions/checkout@v7
+      - name: Tag matches Cargo.toml
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+      # The toolchain comes from rust-toolchain.toml; add the target to that one.
+      - name: Target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
@@ -43,7 +54,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           path: dist

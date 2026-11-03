@@ -11,6 +11,7 @@ shape = "circle"
 vertical = 0.18   # share of words set vertically (never the top tier)
 gap = 2.0         # min distance between words, canvas px (plus 8% of the font size)
 contrast = 1.5    # size = scale * (weight / 10) ^ contrast
+# fill = true     # edge to edge: small copies of the lighter words fill the gaps (try rect, 1600x600)
 
 [semantic]
 backend = "offline"   # or "embed": OpenAI-compatible endpoint, sends the word list only

@@ -1,91 +1,196 @@
-//! The packer: shaping, coverage sprites, spiral placement, SVG/PNG output.
+//! The packer: shaping, coverage sprites, spiral placement, SVG and PNG output.
 
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::path::Path;
+use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use rustybuzz::ttf_parser::{GlyphId, OutlineBuilder};
 use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, Transform};
 
-#[cfg(test)]
-use crate::source::Source;
-use crate::source::Word;
+use crate::color::Rgb;
+use crate::source::{Style, Word};
 
 // ---------------------------------------------------------------- options
 
+/// Canvas and layout settings for [`generate`].
+#[derive(Debug, Clone, PartialEq)]
 pub struct Options {
+    /// Canvas width in px.
     pub width: u32,
+    /// Canvas height in px.
     pub height: u32,
+    /// Layout seed. Same words + same seed = same cloud.
     pub seed: u64,
     /// Probability that a word (outside the top tier) is set vertically.
     pub vertical: f32,
     /// Minimum distance between two words, canvas px (plus 8% of the font size).
     pub gap: f32,
-    /// size = scale * (weight / max) ^ contrast
+    /// Size contrast: `size = scale * (weight / max) ^ contrast`.
     pub contrast: f32,
-    /// Grid pixels per canvas px. 2 is plenty; higher is slower and tighter.
+    /// Grid pixels per canvas px (resolution). 2 is plenty; higher is slower and tighter.
     pub res: u32,
     /// Smallest font size in canvas px.
     pub min_size: f32,
+    /// Fill the canvas edge to edge: a vertical word that does not fit is set horizontally
+    /// instead, and small copies of the words fill the gaps that are left. Off by default, so
+    /// existing layouts do not move.
+    pub fill: bool,
 }
 
 impl Options {
-    /// Defaults, overridden by the word list's `[style]`.
-    pub fn from_style(st: &crate::source::Style) -> Self {
+    /// Build the options from a word list's `[style]`, with defaults for what it leaves out.
+    #[must_use]
+    pub fn from_style(style: &Style) -> Self {
         Self {
-            width: st.width.unwrap_or(800),
-            height: st.height.unwrap_or(418),
-            seed: st.seed.unwrap_or(90),
-            vertical: st.vertical.unwrap_or(0.18).clamp(0.0, 1.0),
-            gap: st.gap.unwrap_or(2.0),
-            contrast: st.contrast.unwrap_or(1.5),
+            width: style.width.unwrap_or(800),
+            height: style.height.unwrap_or(418),
+            seed: style.seed.unwrap_or(90),
+            vertical: style.vertical.unwrap_or(0.18).clamp(0.0, 1.0),
+            gap: style.gap.unwrap_or(2.0),
+            contrast: style.contrast.unwrap_or(1.5),
             res: 2,
             min_size: 8.0,
+            fill: style.fill.unwrap_or(false),
         }
     }
 }
 
-/// Blocked cells from a mask image, sized to the grid (`res` included).
+impl Default for Options {
+    fn default() -> Self {
+        Self::from_style(&Style::default())
+    }
+}
+
+/// A built-in canvas shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Shape {
+    /// The plain canvas.
+    #[default]
+    Rect,
+    /// The ellipse inscribed in the canvas.
+    Ellipse,
+    /// Same as `Ellipse`; use a square canvas for a circle.
+    Circle,
+}
+
+impl Shape {
+    /// Return the name used in the word list and on the command line.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Rect => "rect",
+            Self::Ellipse => "ellipse",
+            Self::Circle => "circle",
+        }
+    }
+}
+
+impl FromStr for Shape {
+    type Err = anyhow::Error;
+
+    fn from_str(name: &str) -> Result<Self> {
+        match name {
+            "rect" => Ok(Self::Rect),
+            "ellipse" => Ok(Self::Ellipse),
+            "circle" => Ok(Self::Circle),
+            other => bail!("unknown shape `{other}` (rect | ellipse | circle)"),
+        }
+    }
+}
+
+impl fmt::Display for Shape {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// Command-line values: the same names as in the word list.
+#[cfg(feature = "cli")]
+impl clap::ValueEnum for Shape {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Rect, Self::Ellipse, Self::Circle]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        Some(clap::builder::PossibleValue::new(self.name()))
+    }
+}
+
+/// Blocked cells, sized to the layout grid (`res` included). Words only go where it is free.
 pub struct MaskImage {
     blocked: Vec<bool>,
 }
 
+impl fmt::Debug for MaskImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let blocked = self.blocked.iter().filter(|&&b| b).count();
+        f.debug_struct("MaskImage")
+            .field("cells", &self.blocked.len())
+            .field("blocked", &blocked)
+            .finish()
+    }
+}
+
 impl MaskImage {
-    /// Dark, opaque pixels are where words may go; `invert` flips that.
-    pub fn load(path: &Path, opt: &Options, invert: bool) -> Result<Self> {
-        let (w, h) = (opt.width * opt.res, opt.height * opt.res);
-        let img = image::open(path).with_context(|| format!("read mask {}", path.display()))?.to_luma_alpha8();
-        let img = image::imageops::resize(&img, w, h, image::imageops::FilterType::Triangle);
-        let blocked = img.pixels().map(|p| (p.0[0] < 128 && p.0[1] >= 128) == invert).collect();
+    /// Load a mask image: dark, opaque pixels are where words may go; `invert` flips that.
+    pub fn load(path: &Path, options: &Options, invert: bool) -> Result<Self> {
+        let (width, height) = (options.width * options.res, options.height * options.res);
+        let image = image::open(path)
+            .with_context(|| format!("read mask {}", path.display()))?
+            .to_luma_alpha8();
+        let image =
+            image::imageops::resize(&image, width, height, image::imageops::FilterType::Triangle);
+        let blocked = image
+            .pixels()
+            .map(|p| (p.0[0] < 128 && p.0[1] >= 128) == invert)
+            .collect();
         Ok(Self { blocked })
     }
 
-    /// Built-in shape, no file: `ellipse` fills the ellipse inscribed in the canvas (a circle
-    /// on a square canvas), `rect` is the plain canvas.
-    pub fn shape(name: &str, opt: &Options) -> Result<Self> {
-        let (w, h) = ((opt.width * opt.res) as usize, (opt.height * opt.res) as usize);
-        let (rx, ry) = (w as f32 / 2.0, h as f32 / 2.0);
-        let blocked = match name {
-            "rect" => vec![false; w * h],
-            "ellipse" | "circle" => (0..w * h)
+    /// Build the mask for a [`Shape`]: `Ellipse` and `Circle` block everything outside the
+    /// inscribed ellipse, `Rect` blocks nothing.
+    ///
+    /// ```
+    /// use wordcloud::{MaskImage, Options, Shape};
+    ///
+    /// let mask = MaskImage::from_shape(Shape::Circle, &Options::default());
+    /// assert!(format!("{mask:?}").starts_with("MaskImage"));
+    /// ```
+    #[must_use]
+    pub fn from_shape(shape: Shape, options: &Options) -> Self {
+        let (width, height) = (
+            (options.width * options.res) as usize,
+            (options.height * options.res) as usize,
+        );
+        let (rx, ry) = (width as f32 / 2.0, height as f32 / 2.0);
+        let blocked = match shape {
+            Shape::Rect => vec![false; width * height],
+            Shape::Ellipse | Shape::Circle => (0..width * height)
                 .map(|i| {
-                    let (x, y) = ((i % w) as f32 + 0.5 - rx, (i / w) as f32 + 0.5 - ry);
+                    let (x, y) = ((i % width) as f32 + 0.5 - rx, (i / width) as f32 + 0.5 - ry);
                     (x / rx).powi(2) + (y / ry).powi(2) > 1.0
                 })
                 .collect(),
-            other => bail!("unknown shape `{other}` (rect | ellipse | circle)"),
         };
-        Ok(Self { blocked })
+        Self { blocked }
+    }
+
+    /// Build the mask for a shape given by name (`rect`, `ellipse`, `circle`). Same as
+    /// [`MaskImage::from_shape`] after parsing the name.
+    pub fn shape(name: &str, options: &Options) -> Result<Self> {
+        Ok(Self::from_shape(name.parse()?, options))
     }
 }
 
 // ---------------------------------------------------------------- rng
 
-/// SplitMix64 - tiny, seedable, good enough for layout jitter.
+/// `SplitMix64`: tiny, seedable, good enough for layout jitter.
+#[derive(Debug)]
 struct Rng(u64);
 
 impl Rng {
-    fn next(&mut self) -> u64 {
+    const fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -101,8 +206,8 @@ impl Rng {
 
 // ---------------------------------------------------------------- shaping + outlines
 
-#[derive(Clone, Copy)]
-enum Seg {
+#[derive(Debug, Clone, Copy)]
+enum Segment {
     Move(f32, f32),
     Line(f32, f32),
     Quad(f32, f32, f32, f32),
@@ -111,247 +216,317 @@ enum Seg {
 }
 
 /// One shaped word in font units (y up), pen starting at 0.
+#[derive(Debug)]
 struct Shaped {
-    segs: Vec<Seg>,
+    segments: Vec<Segment>,
     x0: f32,
     y0: f32,
     x1: f32,
     y1: f32,
 }
 
+#[derive(Debug)]
 struct Collector {
-    segs: Vec<Seg>,
+    segments: Vec<Segment>,
     dx: f32,
     dy: f32,
     bounds: [f32; 4],
 }
 
 impl Collector {
-    fn pt(&mut self, x: f32, y: f32) -> (f32, f32) {
+    fn point(&mut self, x: f32, y: f32) -> (f32, f32) {
         let (x, y) = (x + self.dx, y + self.dy);
-        let b = &mut self.bounds;
-        b[0] = b[0].min(x);
-        b[1] = b[1].min(y);
-        b[2] = b[2].max(x);
-        b[3] = b[3].max(y);
+        let bounds = &mut self.bounds;
+        bounds[0] = bounds[0].min(x);
+        bounds[1] = bounds[1].min(y);
+        bounds[2] = bounds[2].max(x);
+        bounds[3] = bounds[3].max(y);
         (x, y)
     }
 }
 
 impl OutlineBuilder for Collector {
     fn move_to(&mut self, x: f32, y: f32) {
-        let (x, y) = self.pt(x, y);
-        self.segs.push(Seg::Move(x, y));
+        let (x, y) = self.point(x, y);
+        self.segments.push(Segment::Move(x, y));
     }
+
     fn line_to(&mut self, x: f32, y: f32) {
-        let (x, y) = self.pt(x, y);
-        self.segs.push(Seg::Line(x, y));
+        let (x, y) = self.point(x, y);
+        self.segments.push(Segment::Line(x, y));
     }
+
     fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
-        let (x1, y1) = self.pt(x1, y1);
-        let (x, y) = self.pt(x, y);
-        self.segs.push(Seg::Quad(x1, y1, x, y));
+        let (x1, y1) = self.point(x1, y1);
+        let (x, y) = self.point(x, y);
+        self.segments.push(Segment::Quad(x1, y1, x, y));
     }
+
     fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
-        let (x1, y1) = self.pt(x1, y1);
-        let (x2, y2) = self.pt(x2, y2);
-        let (x, y) = self.pt(x, y);
-        self.segs.push(Seg::Cubic(x1, y1, x2, y2, x, y));
+        let (x1, y1) = self.point(x1, y1);
+        let (x2, y2) = self.point(x2, y2);
+        let (x, y) = self.point(x, y);
+        self.segments.push(Segment::Cubic(x1, y1, x2, y2, x, y));
     }
+
     fn close(&mut self) {
-        self.segs.push(Seg::Close);
+        self.segments.push(Segment::Close);
     }
 }
 
-fn shape(face: &rustybuzz::Face, text: &str) -> Option<Shaped> {
-    let mut buf = rustybuzz::UnicodeBuffer::new();
-    buf.push_str(text);
-    let glyphs = rustybuzz::shape(face, &[], buf);
-    let mut c = Collector { segs: Vec::new(), dx: 0.0, dy: 0.0, bounds: [f32::MAX, f32::MAX, f32::MIN, f32::MIN] };
+fn shape(face: &rustybuzz::Face<'_>, text: &str) -> Option<Shaped> {
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    buffer.push_str(text);
+    let glyphs = rustybuzz::shape(face, &[], buffer);
+    let mut collector = Collector {
+        segments: Vec::new(),
+        dx: 0.0,
+        dy: 0.0,
+        bounds: [f32::MAX, f32::MAX, f32::MIN, f32::MIN],
+    };
     let mut pen = 0.0;
-    for (info, pos) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
-        c.dx = pen + pos.x_offset as f32;
-        c.dy = pos.y_offset as f32;
-        face.outline_glyph(GlyphId(info.glyph_id as u16), &mut c);
-        pen += pos.x_advance as f32;
+    for (info, position) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
+        collector.dx = pen + position.x_offset as f32;
+        collector.dy = position.y_offset as f32;
+        face.outline_glyph(GlyphId(info.glyph_id as u16), &mut collector);
+        pen += position.x_advance as f32;
     }
-    let [x0, y0, x1, y1] = c.bounds;
-    (x1 > x0 && y1 > y0).then_some(Shaped { segs: c.segs, x0, y0, x1, y1 })
+    let [x0, y0, x1, y1] = collector.bounds;
+    (x1 > x0 && y1 > y0).then_some(Shaped {
+        segments: collector.segments,
+        x0,
+        y0,
+        x1,
+        y1,
+    })
 }
 
 /// Font units -> sprite/canvas pixels, with an optional 90 degree turn (reads bottom to top).
-#[derive(Clone, Copy)]
-struct Xf {
+#[derive(Debug, Clone, Copy)]
+struct Transformation {
     k: f32,
     x0: f32,
     y1: f32,
     pad: f32,
     wu: f32,
-    rot: bool,
+    rotated: bool,
     ox: f32,
     oy: f32,
     div: f32,
 }
 
-impl Xf {
+impl Transformation {
     fn map(&self, fx: f32, fy: f32) -> (f32, f32) {
         let u = (fx - self.x0) * self.k + self.pad;
         let v = (self.y1 - fy) * self.k + self.pad;
-        let (x, y) = if self.rot { (v, self.wu - u) } else { (u, v) };
+        let (x, y) = if self.rotated {
+            (v, self.wu - u)
+        } else {
+            (u, v)
+        };
         ((x + self.ox) / self.div, (y + self.oy) / self.div)
     }
 }
 
-fn skia_path(segs: &[Seg], xf: &Xf) -> Option<tiny_skia::Path> {
-    let mut pb = PathBuilder::new();
-    for s in segs {
-        match *s {
-            Seg::Move(x, y) => {
-                let (x, y) = xf.map(x, y);
-                pb.move_to(x, y);
-            }
-            Seg::Line(x, y) => {
-                let (x, y) = xf.map(x, y);
-                pb.line_to(x, y);
-            }
-            Seg::Quad(x1, y1, x, y) => {
-                let ((x1, y1), (x, y)) = (xf.map(x1, y1), xf.map(x, y));
-                pb.quad_to(x1, y1, x, y);
-            }
-            Seg::Cubic(x1, y1, x2, y2, x, y) => {
-                let ((x1, y1), (x2, y2), (x, y)) = (xf.map(x1, y1), xf.map(x2, y2), xf.map(x, y));
-                pb.cubic_to(x1, y1, x2, y2, x, y);
-            }
-            Seg::Close => pb.close(),
+fn skia_path(segments: &[Segment], transformation: &Transformation) -> Option<tiny_skia::Path> {
+    let map = |x, y| transformation.map(x, y);
+    let mut builder = PathBuilder::new();
+    for segment in segments {
+        match *segment {
+            Segment::Move(x, y) => {
+                let (x, y) = map(x, y);
+                builder.move_to(x, y);
+            },
+            Segment::Line(x, y) => {
+                let (x, y) = map(x, y);
+                builder.line_to(x, y);
+            },
+            Segment::Quad(x1, y1, x, y) => {
+                let ((x1, y1), (x, y)) = (map(x1, y1), map(x, y));
+                builder.quad_to(x1, y1, x, y);
+            },
+            Segment::Cubic(x1, y1, x2, y2, x, y) => {
+                let ((x1, y1), (x2, y2), (x, y)) = (map(x1, y1), map(x2, y2), map(x, y));
+                builder.cubic_to(x1, y1, x2, y2, x, y);
+            },
+            Segment::Close => builder.close(),
         }
     }
-    pb.finish()
+    builder.finish()
 }
 
-fn svg_path(segs: &[Seg], xf: &Xf) -> String {
-    let mut d = String::new();
-    let mut p = |cmd: char, pts: &[(f32, f32)]| {
-        d.push(cmd);
-        for (i, &(x, y)) in pts.iter().enumerate() {
-            let (x, y) = xf.map(x, y);
-            let _ = write!(d, "{}{:.2} {:.2}", if i > 0 { " " } else { "" }, x, y);
+fn svg_path(segments: &[Segment], transformation: &Transformation) -> String {
+    let mut data = String::new();
+    let mut push = |command: char, points: &[(f32, f32)]| {
+        data.push(command);
+        for (i, &(x, y)) in points.iter().enumerate() {
+            let (x, y) = transformation.map(x, y);
+            let _ = write!(data, "{}{:.2} {:.2}", if i > 0 { " " } else { "" }, x, y);
         }
     };
-    for s in segs {
-        match *s {
-            Seg::Move(x, y) => p('M', &[(x, y)]),
-            Seg::Line(x, y) => p('L', &[(x, y)]),
-            Seg::Quad(x1, y1, x, y) => p('Q', &[(x1, y1), (x, y)]),
-            Seg::Cubic(x1, y1, x2, y2, x, y) => p('C', &[(x1, y1), (x2, y2), (x, y)]),
-            Seg::Close => p('Z', &[]),
+    for segment in segments {
+        match *segment {
+            Segment::Move(x, y) => push('M', &[(x, y)]),
+            Segment::Line(x, y) => push('L', &[(x, y)]),
+            Segment::Quad(x1, y1, x, y) => push('Q', &[(x1, y1), (x, y)]),
+            Segment::Cubic(x1, y1, x2, y2, x, y) => push('C', &[(x1, y1), (x2, y2), (x, y)]),
+            Segment::Close => push('Z', &[]),
         }
     }
-    d
+    data
 }
 
 // ---------------------------------------------------------------- bit sprites + occupancy
 
 /// A word's coverage as rows of 64-px words, LSB = leftmost pixel.
+#[derive(Debug)]
 struct Sprite {
-    w: usize,
-    h: usize,
+    width: usize,
+    height: usize,
     stride: usize,
     bits: Vec<u64>,
     /// Non-empty (row, word) cells, middle rows first - ink is densest there, so a collision
     /// usually shows up on the first few tests.
     cells: Vec<(usize, usize, u64)>,
-    xf: Xf,
+    transformation: Transformation,
 }
 
 impl Sprite {
-    fn new(shaped: &Shaped, size: f32, upem: f32, rot: bool, gap: usize) -> Option<Self> {
+    fn new(shaped: &Shaped, size: f32, upem: f32, rotated: bool, gap: usize) -> Option<Self> {
         let k = size / upem;
         let pad = gap as f32 + 1.0;
         let wu = ((shaped.x1 - shaped.x0) * k + 2.0 * pad).ceil();
         let hu = ((shaped.y1 - shaped.y0) * k + 2.0 * pad).ceil();
-        let (w, h) = if rot { (hu as usize, wu as usize) } else { (wu as usize, hu as usize) };
-        let xf = Xf { k, x0: shaped.x0, y1: shaped.y1, pad, wu, rot, ox: 0.0, oy: 0.0, div: 1.0 };
-        let mut mask = Mask::new(w as u32, h as u32)?;
-        mask.fill_path(&skia_path(&shaped.segs, &xf)?, FillRule::Winding, true, Transform::identity());
+        let (width, height) = if rotated {
+            (hu as usize, wu as usize)
+        } else {
+            (wu as usize, hu as usize)
+        };
+        let transformation = Transformation {
+            k,
+            x0: shaped.x0,
+            y1: shaped.y1,
+            pad,
+            wu,
+            rotated,
+            ox: 0.0,
+            oy: 0.0,
+            div: 1.0,
+        };
+        let mut mask = Mask::new(width as u32, height as u32)?;
+        mask.fill_path(
+            &skia_path(&shaped.segments, &transformation)?,
+            FillRule::Winding,
+            true,
+            Transform::identity(),
+        );
         let mut on: Vec<bool> = mask.data().iter().map(|&a| a > 0).collect();
-        dilate(&mut on, w, h, gap);
-        let stride = w.div_ceil(64);
-        let mut bits = vec![0u64; stride * h];
-        for y in 0..h {
-            for x in 0..w {
-                if on[y * w + x] {
+        dilate(&mut on, width, height, gap);
+        let stride = width.div_ceil(64);
+        let mut bits = vec![0u64; stride * height];
+        for y in 0..height {
+            for x in 0..width {
+                if on[y * width + x] {
                     bits[y * stride + x / 64] |= 1 << (x % 64);
                 }
             }
         }
-        Some(Self::with_cells(w, h, stride, bits, xf))
+        Some(Self::with_cells(
+            width,
+            height,
+            stride,
+            bits,
+            transformation,
+        ))
     }
 
-    fn with_cells(w: usize, h: usize, stride: usize, bits: Vec<u64>, xf: Xf) -> Self {
-        let mut cells: Vec<(usize, usize, u64)> =
-            (0..h).flat_map(|r| (0..stride).map(move |j| (r, j))).map(|(r, j)| (r, j, bits[r * stride + j])).filter(|c| c.2 != 0).collect();
-        cells.sort_by_key(|c| (c.0 as isize - h as isize / 2).abs());
-        Self { w, h, stride, bits, cells, xf }
+    fn with_cells(
+        width: usize,
+        height: usize,
+        stride: usize,
+        bits: Vec<u64>,
+        transformation: Transformation,
+    ) -> Self {
+        let mut cells: Vec<(usize, usize, u64)> = (0..height)
+            .flat_map(|row| (0..stride).map(move |column| (row, column)))
+            .map(|(row, column)| (row, column, bits[row * stride + column]))
+            .filter(|cell| cell.2 != 0)
+            .collect();
+        cells.sort_by_key(|cell| (cell.0 as isize - height as isize / 2).abs());
+        Self {
+            width,
+            height,
+            stride,
+            bits,
+            cells,
+            transformation,
+        }
     }
 }
 
-/// Square dilation by `r` px (separable max filter).
-fn dilate(on: &mut [bool], w: usize, h: usize, r: usize) {
-    if r == 0 {
+/// Square dilation by `radius` px (separable max filter).
+fn dilate(on: &mut [bool], width: usize, height: usize, radius: usize) {
+    if radius == 0 {
         return;
     }
-    let src = on.to_vec();
-    let mut tmp = vec![false; on.len()];
-    for y in 0..h {
-        for x in 0..w {
-            let (a, b) = (x.saturating_sub(r), (x + r).min(w - 1));
-            tmp[y * w + x] = src[y * w + a..=y * w + b].iter().any(|&v| v);
+    let source = on.to_vec();
+    let mut rows = vec![false; on.len()];
+    for y in 0..height {
+        for x in 0..width {
+            let (a, b) = (x.saturating_sub(radius), (x + radius).min(width - 1));
+            rows[y * width + x] = source[y * width + a..=y * width + b].iter().any(|&v| v);
         }
     }
-    for y in 0..h {
-        let (a, b) = (y.saturating_sub(r), (y + r).min(h - 1));
-        for x in 0..w {
-            on[y * w + x] = (a..=b).any(|yy| tmp[yy * w + x]);
+    for y in 0..height {
+        let (a, b) = (y.saturating_sub(radius), (y + radius).min(height - 1));
+        for x in 0..width {
+            on[y * width + x] = (a..=b).any(|row| rows[row * width + x]);
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Grid {
-    w: usize,
-    h: usize,
+    width: usize,
+    height: usize,
     stride: usize,
     bits: Vec<u64>,
 }
 
 impl Grid {
-    fn new(w: usize, h: usize) -> Self {
-        let stride = w.div_ceil(64) + 1;
-        Self { w, h, stride, bits: vec![0; stride * h] }
+    fn new(width: usize, height: usize) -> Self {
+        let stride = width.div_ceil(64) + 1;
+        Self {
+            width,
+            height,
+            stride,
+            bits: vec![0; stride * height],
+        }
     }
 
     fn set(&mut self, x: usize, y: usize) {
         self.bits[y * self.stride + x / 64] |= 1 << (x % 64);
     }
 
-    /// Does `s` at (x, y) touch anything? Caller guarantees it lies inside the grid.
-    fn collides(&self, s: &Sprite, x: usize, y: usize) -> bool {
-        let (off, sh) = (x / 64, x % 64);
-        s.cells.iter().any(|&(r, j, b)| {
-            let i = (y + r) * self.stride + off + j;
-            self.bits[i] & (b << sh) != 0 || (sh > 0 && self.bits[i + 1] & (b >> (64 - sh)) != 0)
+    /// Does `sprite` at (x, y) touch anything? Caller guarantees it lies inside the grid.
+    fn collides(&self, sprite: &Sprite, x: usize, y: usize) -> bool {
+        let (offset, shift) = (x / 64, x % 64);
+        sprite.cells.iter().any(|&(row, column, bits)| {
+            let i = (y + row) * self.stride + offset + column;
+            self.bits[i] & (bits << shift) != 0
+                || (shift > 0 && self.bits[i + 1] & (bits >> (64 - shift)) != 0)
         })
     }
 
-    fn place(&mut self, s: &Sprite, x: usize, y: usize) {
-        let (off, sh) = (x / 64, x % 64);
-        for r in 0..s.h {
-            let base = (y + r) * self.stride + off;
-            for j in 0..s.stride {
-                let b = s.bits[r * s.stride + j];
-                self.bits[base + j] |= b << sh;
-                if sh > 0 {
-                    self.bits[base + j + 1] |= b >> (64 - sh);
+    fn place(&mut self, sprite: &Sprite, x: usize, y: usize) {
+        let (offset, shift) = (x / 64, x % 64);
+        for row in 0..sprite.height {
+            let base = (y + row) * self.stride + offset;
+            for column in 0..sprite.stride {
+                let bits = sprite.bits[row * sprite.stride + column];
+                self.bits[base + column] |= bits << shift;
+                if shift > 0 {
+                    self.bits[base + column + 1] |= bits >> (64 - shift);
                 }
             }
         }
@@ -365,27 +540,41 @@ impl Grid {
 
 // ---------------------------------------------------------------- layout
 
+/// A word with everything random already drawn, so every bisection pass sees the same word.
+#[derive(Debug)]
 struct Prepared {
-    idx: usize,
+    index: usize,
     shaped: Shaped,
-    rel: f32,
-    rot: bool,
+    relative: f32,
+    rotated: bool,
     start: (f32, f32),
     theta0: f32,
-    dir: f32,
+    direction: f32,
 }
 
+/// A word that made it onto the canvas.
+#[derive(Debug)]
 pub struct Placed {
+    /// The word as it was given to [`generate`].
     pub word: Word,
+    /// A small extra copy that fills a gap ([`Options::fill`]), not the word's own spot.
+    pub copy: bool,
     shape: usize,
-    xf: Xf,
+    transformation: Transformation,
 }
 
+/// A finished layout. Write it with [`Cloud::svg`] or [`Cloud::png`].
+#[derive(Debug)]
 pub struct Cloud {
+    /// Canvas width in px.
     pub width: u32,
+    /// Canvas height in px.
     pub height: u32,
+    /// The placed words, largest first, then the fill copies ([`Options::fill`]).
     pub placed: Vec<Placed>,
+    /// Words that found no room even at a smaller size.
     pub dropped: Vec<String>,
+    /// The global scale found by bisection: font size in px of the heaviest word.
     pub scale: f32,
     shapes: Vec<Shaped>,
     #[cfg(test)]
@@ -394,243 +583,599 @@ pub struct Cloud {
     sprite_bits: u32,
 }
 
-/// Lay out `words` with the font in `font_data`.
-pub fn generate(words: &[Word], font_data: &[u8], opt: &Options, mask: Option<&MaskImage>) -> Result<Cloud> {
+/// One pass at a fixed scale.
+#[derive(Debug)]
+struct Pass {
+    placed: Vec<Placed>,
+    dropped: Vec<String>,
+    #[cfg_attr(not(test), allow(dead_code, reason = "read by the overlap test only"))]
+    grid: Grid,
+    #[cfg_attr(not(test), allow(dead_code, reason = "read by the overlap test only"))]
+    sprite_bits: u32,
+}
+
+/// Everything a pass needs, fixed for the whole bisection.
+#[derive(Debug)]
+struct Packer<'a> {
+    words: &'a [Word],
+    prepared: Vec<Prepared>,
+    base: Grid,
+    options: &'a Options,
+    upem: f32,
+}
+
+/// Lay out `words` with the font in `font_data` (TTF/OTF bytes, e.g. [`crate::DEFAULT_FONT`]).
+///
+/// # Examples
+///
+/// ```
+/// use wordcloud::{Options, Shape, MaskImage, Word};
+///
+/// let words: Vec<Word> = [("Sisu", 10.0), ("Löyly", 6.0), ("Kac", 4.0)]
+///     .into_iter()
+///     .map(|(text, weight)| Word {
+///         text: text.into(),
+///         weight,
+///         color: "#111318".into(),
+///         color_dark: "#e6e7ea".into(),
+///         related: vec![],
+///     })
+///     .collect();
+/// let options = Options { width: 300, height: 300, ..Options::default() };
+/// let mask = MaskImage::from_shape(Shape::Circle, &options);
+/// let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &options, Some(&mask))?;
+/// assert_eq!(cloud.placed.len(), 3);
+/// # anyhow::Ok(())
+/// ```
+pub fn generate(
+    words: &[Word],
+    font_data: &[u8],
+    options: &Options,
+    mask: Option<&MaskImage>,
+) -> Result<Cloud> {
     let face = rustybuzz::Face::from_slice(font_data, 0).context("not a usable font")?;
-    let upem = face.units_per_em() as f32;
-    let res = opt.res as f32;
-    let (gw, gh) = ((opt.width * opt.res) as usize, (opt.height * opt.res) as usize);
-    let mut base = Grid::new(gw, gh);
-    if let Some(m) = mask {
-        for (i, &b) in m.blocked.iter().enumerate() {
-            if b {
-                base.set(i % gw, i / gw);
-            }
-        }
-    }
-
-    // Per-word randomness drawn once, so every bisection run sees the same words.
-    let mut rng = Rng(opt.seed);
-    let wmax = words.iter().map(|w| w.weight).fold(f32::MIN, f32::max);
-    let mut order: Vec<(usize, u64)> = words.iter().enumerate().map(|(i, _)| (i, rng.next())).collect();
-    order.sort_by(|a, b| words[b.0].weight.total_cmp(&words[a.0].weight).then(a.1.cmp(&b.1)));
-    let mut prep = Vec::new();
-    for (idx, _) in order {
-        let w = &words[idx];
-        let Some(shaped) = shape(&face, &w.text) else { bail!("font has no outlines for `{}`", w.text) };
-        let rot = w.weight < wmax && rng.f32() < opt.vertical;
-        let start = ((rng.f32() - 0.5) * 0.4, (rng.f32() - 0.5) * 0.4);
-        let theta0 = rng.f32() * std::f32::consts::TAU;
-        let dir = if rng.f32() < 0.5 { 1.0 } else { -1.0 };
-        prep.push(Prepared { idx, shaped, rel: (w.weight / wmax).powf(opt.contrast), rot, start, theta0, dir });
-    }
-
-    let run = |scale: f32, strict: bool| -> Option<(Vec<Placed>, Vec<String>, Grid, u32)> {
-        let mut grid = base.clone();
-        let (mut placed, mut dropped, mut bits) = (Vec::new(), Vec::new(), 0);
-        for (pi, p) in prep.iter().enumerate() {
-            let mut size = (scale * p.rel).max(opt.min_size);
-            let mut ok = false;
-            for _ in 0..if strict { 1 } else { 8 } {
-                // Each sprite carries half the gap, so two neighbours sit `gap` apart. Big words
-                // get more air: plus 8% of their size.
-                let gap = ((opt.gap + 0.08 * size) * res / 2.0).round() as usize;
-                let sprite = Sprite::new(&p.shaped, size * res, upem, p.rot, gap)?;
-                if let Some((x, y)) = find(&grid, &sprite, p, res) {
-                    grid.place(&sprite, x, y);
-                    bits += sprite.bits.iter().map(|b| b.count_ones()).sum::<u32>();
-                    let xf = Xf { ox: x as f32, oy: y as f32, div: res, ..sprite.xf };
-                    placed.push(Placed { word: words[p.idx].clone(), shape: pi, xf });
-                    ok = true;
-                    break;
-                }
-                size *= 0.9;
-                if size < opt.min_size {
-                    break;
-                }
-            }
-            if !ok {
-                if strict {
-                    return None;
-                }
-                dropped.push(words[p.idx].text.clone());
-            }
-        }
-        Some((placed, dropped, grid, bits))
+    let packer = Packer {
+        words,
+        prepared: prepare(words, &face, options)?,
+        base: blocked_grid(options, mask),
+        options,
+        upem: face.units_per_em() as f32,
     };
 
     // Bisection on the global scale: the largest one where every word fits at nominal size.
-    let (mut lo, mut hi) = (opt.min_size, opt.height as f32);
+    let (mut lo, mut hi) = (options.min_size, options.height as f32);
     for _ in 0..11 {
         let mid = (lo + hi) / 2.0;
-        if run(mid, true).is_some() { lo = mid } else { hi = mid }
+        if packer.pass(mid, true).is_some() {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
     }
-    let (placed, dropped, _grid, _bits) = run(lo, false).context("layout failed")?;
+    let pass = packer.pass(lo, false).context("layout failed")?;
     Ok(Cloud {
-        width: opt.width,
-        height: opt.height,
-        placed,
-        dropped,
+        width: options.width,
+        height: options.height,
+        placed: pass.placed,
+        dropped: pass.dropped,
         scale: lo,
-        shapes: prep.into_iter().map(|p| p.shaped).collect(),
+        shapes: packer.prepared.into_iter().map(|p| p.shaped).collect(),
         #[cfg(test)]
-        grid: _grid,
+        grid: pass.grid,
         #[cfg(test)]
-        sprite_bits: _bits,
+        sprite_bits: pass.sprite_bits,
     })
 }
 
-/// Walk the spiral from the word's seeded start; first free spot wins.
-fn find(grid: &Grid, s: &Sprite, p: &Prepared, res: f32) -> Option<(usize, usize)> {
-    if s.w > grid.w || s.h > grid.h {
+/// The empty grid with the mask's blocked cells set.
+fn blocked_grid(options: &Options, mask: Option<&MaskImage>) -> Grid {
+    let (width, height) = (
+        (options.width * options.res) as usize,
+        (options.height * options.res) as usize,
+    );
+    let mut grid = Grid::new(width, height);
+    if let Some(mask) = mask {
+        for (i, &blocked) in mask.blocked.iter().enumerate() {
+            if blocked {
+                grid.set(i % width, i / width);
+            }
+        }
+    }
+    grid
+}
+
+/// Shape every word and draw its randomness once, heaviest first.
+fn prepare(words: &[Word], face: &rustybuzz::Face<'_>, options: &Options) -> Result<Vec<Prepared>> {
+    let mut rng = Rng(options.seed);
+    let max_weight = words.iter().map(|w| w.weight).fold(f32::MIN, f32::max);
+    let mut order: Vec<(usize, u64)> = words
+        .iter()
+        .enumerate()
+        .map(|(i, _)| (i, rng.next()))
+        .collect();
+    order.sort_by(|a, b| {
+        words[b.0]
+            .weight
+            .total_cmp(&words[a.0].weight)
+            .then(a.1.cmp(&b.1))
+    });
+    let mut prepared = Vec::new();
+    for (index, _) in order {
+        let word = &words[index];
+        let Some(shaped) = shape(face, &word.text) else {
+            bail!("font has no outlines for `{}`", word.text)
+        };
+        let rotated = word.weight < max_weight && rng.f32() < options.vertical;
+        let start = ((rng.f32() - 0.5) * 0.4, (rng.f32() - 0.5) * 0.4);
+        let theta0 = rng.f32() * std::f32::consts::TAU;
+        let direction = if rng.f32() < 0.5 { 1.0 } else { -1.0 };
+        prepared.push(Prepared {
+            index,
+            shaped,
+            relative: (word.weight / max_weight).powf(options.contrast),
+            rotated,
+            start,
+            theta0,
+            direction,
+        });
+    }
+    Ok(prepared)
+}
+
+impl Packer<'_> {
+    /// [`Options::fill`]: drop copies of the words into the gaps left after a pass. Only words
+    /// up to the median size are copied, at most once and never larger than the word itself.
+    /// Sizes run from the median down to 1.5x `min_size`, lightest words first at each size;
+    /// spots are tried from the centre outwards. Returns the bits the copies took.
+    fn fill_gaps(&self, grid: &mut Grid, placed: &mut Vec<Placed>, scale: f32) -> Option<u32> {
+        let resolution = self.options.res as f32;
+        let mut relative: Vec<f32> = self.prepared.iter().map(|p| p.relative).collect();
+        relative.sort_by(f32::total_cmp);
+        let floor = 1.5 * self.options.min_size;
+        let median = *relative.get(relative.len() / 2)?;
+        let mut size = (scale * median).max(floor);
+        let spots = Spots::new(grid);
+        // Where each word already is (top left, grid px): a copy keeps away from it.
+        let mut original = vec![None; self.prepared.len()];
+        for word in placed.iter() {
+            original[word.shape] = Some((word.transformation.ox, word.transformation.oy));
+        }
+        let mut copied = vec![false; self.prepared.len()];
+        let mut bits = 0;
+        loop {
+            if size < floor {
+                break;
+            }
+            let gap = ((self.options.gap + 0.08 * size) * resolution / 2.0).round() as usize;
+            for (shape_index, prepared) in self.prepared.iter().enumerate().rev() {
+                // A copy never outgrows its word, and the heavy words are not copied at all.
+                if copied[shape_index]
+                    || prepared.relative > median
+                    || size > scale * prepared.relative
+                {
+                    continue;
+                }
+                // Alternate the turn by word, so the copies fill tall gaps as well as wide ones.
+                let first = shape_index % 3 == 1;
+                for rotated in [first, !first] {
+                    let sprite =
+                        Sprite::new(&prepared.shaped, size * resolution, self.upem, rotated, gap)?;
+                    if let Some((x, y)) = spots.find(grid, &sprite, original[shape_index]) {
+                        grid.place(&sprite, x, y);
+                        bits += sprite.bits.iter().map(|b| b.count_ones()).sum::<u32>();
+                        placed.push(Placed {
+                            word: self.words[prepared.index].clone(),
+                            copy: true,
+                            shape: shape_index,
+                            transformation: Transformation {
+                                ox: x as f32,
+                                oy: y as f32,
+                                div: resolution,
+                                ..sprite.transformation
+                            },
+                        });
+                        copied[shape_index] = true;
+                        break;
+                    }
+                }
+            }
+            size *= 0.85;
+        }
+        Some(bits)
+    }
+
+    /// Place every word at `scale`. `strict`: fail as soon as one word does not fit at its
+    /// nominal size; otherwise shrink it up to 8 times, then drop it.
+    fn pass(&self, scale: f32, strict: bool) -> Option<Pass> {
+        let resolution = self.options.res as f32;
+        let mut grid = self.base.clone();
+        let (mut placed, mut dropped, mut sprite_bits) = (Vec::new(), Vec::new(), 0);
+        for (shape_index, prepared) in self.prepared.iter().enumerate() {
+            let mut size = (scale * prepared.relative).max(self.options.min_size);
+            let mut fits = false;
+            for _ in 0..if strict { 1 } else { 8 } {
+                // Each sprite carries half the gap, so two neighbours sit `gap` apart. Big words
+                // get more air: plus 8% of their size.
+                let gap = ((self.options.gap + 0.08 * size) * resolution / 2.0).round() as usize;
+                // With `fill`, a vertical word that finds no spot is tried horizontally too.
+                let turns: &[bool] = if self.options.fill && prepared.rotated {
+                    &[true, false]
+                } else {
+                    &[prepared.rotated]
+                };
+                let mut spot = None;
+                for &rotated in turns {
+                    let sprite =
+                        Sprite::new(&prepared.shaped, size * resolution, self.upem, rotated, gap)?;
+                    if let Some(at) = find(&grid, &sprite, prepared, resolution) {
+                        spot = Some((sprite, at));
+                        break;
+                    }
+                }
+                if let Some((sprite, (x, y))) = spot {
+                    grid.place(&sprite, x, y);
+                    sprite_bits += sprite.bits.iter().map(|b| b.count_ones()).sum::<u32>();
+                    let transformation = Transformation {
+                        ox: x as f32,
+                        oy: y as f32,
+                        div: resolution,
+                        ..sprite.transformation
+                    };
+                    placed.push(Placed {
+                        word: self.words[prepared.index].clone(),
+                        copy: false,
+                        shape: shape_index,
+                        transformation,
+                    });
+                    fits = true;
+                    break;
+                }
+                size *= 0.9;
+                if size < self.options.min_size {
+                    break;
+                }
+            }
+            if !fits {
+                if strict {
+                    return None;
+                }
+                dropped.push(self.words[prepared.index].text.clone());
+            }
+        }
+        if self.options.fill && !strict {
+            sprite_bits += self.fill_gaps(&mut grid, &mut placed, scale)?;
+        }
+        Some(Pass {
+            placed,
+            dropped,
+            grid,
+            sprite_bits,
+        })
+    }
+}
+
+/// Walk the spiral from the word's seeded start; the first free spot wins.
+fn find(
+    grid: &Grid,
+    sprite: &Sprite,
+    prepared: &Prepared,
+    resolution: f32,
+) -> Option<(usize, usize)> {
+    if sprite.width > grid.width || sprite.height > grid.height {
         return None;
     }
-    let (gw, gh) = (grid.w as f32, grid.h as f32);
-    let e = gw / gh; // stretch the spiral to the canvas aspect
-    let (cx, cy) = (gw * (0.5 + p.start.0), gh * (0.5 + p.start.1));
+    let (grid_width, grid_height) = (grid.width as f32, grid.height as f32);
+    let aspect = grid_width / grid_height; // stretch the spiral to the canvas aspect
+    let (cx, cy) = (
+        grid_width * (0.5 + prepared.start.0),
+        grid_height * (0.5 + prepared.start.1),
+    );
     // Far enough that the ellipse covers every corner.
-    let rmax = [(0.0, 0.0), (gw, 0.0), (0.0, gh), (gw, gh)]
-        .iter()
-        .map(|&(x, y): &(f32, f32)| (((x - cx) / e).powi(2) + (y - cy).powi(2)).sqrt())
-        .fold(0.0, f32::max);
-    // One canvas px between rings and between steps (grid px = canvas px * res).
-    let (spacing, step) = (res, res);
-    let (xmax, ymax) = ((grid.w - s.w) as f32, (grid.h - s.h) as f32);
+    let radius_max = [
+        (0.0, 0.0),
+        (grid_width, 0.0),
+        (0.0, grid_height),
+        (grid_width, grid_height),
+    ]
+    .iter()
+    .map(|&(x, y): &(f32, f32)| (((x - cx) / aspect).powi(2) + (y - cy).powi(2)).sqrt())
+    .fold(0.0, f32::max);
+    // One canvas px between rings and between steps (grid px = canvas px * resolution).
+    let (spacing, step) = (resolution, resolution);
+    let (x_max, y_max) = (
+        (grid.width - sprite.width) as f32,
+        (grid.height - sprite.height) as f32,
+    );
     let mut t = 0.0f32;
     loop {
-        let r = spacing * t / std::f32::consts::TAU;
-        if r > rmax {
+        let radius = spacing * t / std::f32::consts::TAU;
+        if radius > radius_max {
             return None;
         }
-        let th = p.theta0 + p.dir * t;
-        let x = (cx + e * r * th.cos() - s.w as f32 / 2.0).round();
-        let y = (cy + r * th.sin() - s.h as f32 / 2.0).round();
-        if (0.0..=xmax).contains(&x) && (0.0..=ymax).contains(&y) && !grid.collides(s, x as usize, y as usize) {
+        let theta = prepared.theta0 + prepared.direction * t;
+        let x = (cx + aspect * radius * theta.cos() - sprite.width as f32 / 2.0).round();
+        let y = (cy + radius * theta.sin() - sprite.height as f32 / 2.0).round();
+        if (0.0..=x_max).contains(&x)
+            && (0.0..=y_max).contains(&y)
+            && !grid.collides(sprite, x as usize, y as usize)
+        {
             return Some((x as usize, y as usize));
         }
-        t += step / (r * e.max(1.0)).max(step);
+        t += step / (radius * aspect.max(1.0)).max(step);
+    }
+}
+
+/// Candidate centres for [`Options::fill`]: a lattice of 2 grid px, nearest to the canvas
+/// centre first (distance relative to the canvas size, so a wide canvas fills evenly).
+#[derive(Debug)]
+struct Spots(Vec<(usize, usize)>);
+
+impl Spots {
+    fn new(grid: &Grid) -> Self {
+        let (width, height) = (grid.width as f32, grid.height as f32);
+        let mut lattice: Vec<(f32, (usize, usize))> = (0..grid.height)
+            .step_by(2)
+            .flat_map(|y| (0..grid.width).step_by(2).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let (dx, dy) = (x as f32 / width - 0.5, y as f32 / height - 0.5);
+                (dx * dx + dy * dy, (x, y))
+            })
+            .collect();
+        lattice.sort_by(|a, b| a.0.total_cmp(&b.0));
+        Self(lattice.into_iter().map(|(_, spot)| spot).collect())
+    }
+
+    /// The first spot where `sprite`, centred on it, lies inside the grid, touches nothing and
+    /// is at least a quarter of the canvas away from `away` (both top left, grid px).
+    fn find(
+        &self,
+        grid: &Grid,
+        sprite: &Sprite,
+        away: Option<(f32, f32)>,
+    ) -> Option<(usize, usize)> {
+        let (width, height) = (grid.width as f32, grid.height as f32);
+        let (half_width, half_height) = (sprite.width / 2, sprite.height / 2);
+        self.0
+            .iter()
+            .filter_map(|&(x, y)| Some((x.checked_sub(half_width)?, y.checked_sub(half_height)?)))
+            .filter(|&(x, y)| x + sprite.width <= grid.width && y + sprite.height <= grid.height)
+            .filter(|&(x, y)| {
+                away.is_none_or(|(ax, ay)| {
+                    let (dx, dy) = ((x as f32 - ax) / width, (y as f32 - ay) / height);
+                    dx * dx + dy * dy >= 0.25 * 0.25
+                })
+            })
+            .find(|&(x, y)| !grid.collides(sprite, x, y))
     }
 }
 
 // ---------------------------------------------------------------- output
 
 impl Cloud {
-    /// Glyph outlines as SVG paths, one per word. No font needed to display it. Transparent
-    /// unless `background` is given; `dark` picks the `[colors_dark]` palette.
+    /// Write the glyph outlines as SVG paths, one per word, with the word as `<title>`.
+    ///
+    /// No font is needed to display it. Transparent unless `background` is given; `dark`
+    /// picks the `[colors_dark]` palette.
+    #[must_use]
     pub fn svg(&self, background: Option<&str>, dark: bool) -> String {
         let (w, h) = (self.width, self.height);
-        let mut s = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n");
-        if let Some(bg) = background {
-            let _ = writeln!(s, "<rect width=\"{w}\" height=\"{h}\" fill=\"{bg}\"/>");
+        let mut svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n"
+        );
+        if let Some(background) = background {
+            let _ = writeln!(
+                svg,
+                "<rect width=\"{w}\" height=\"{h}\" fill=\"{background}\"/>"
+            );
         }
-        for p in &self.placed {
-            let d = svg_path(&self.shapes[p.shape].segs, &p.xf);
-            let fill = if dark { &p.word.color_dark } else { &p.word.color };
-            let _ = writeln!(s, "<path fill=\"{fill}\" d=\"{d}\"><title>{}</title></path>", xml_escape(&p.word.text));
+        for placed in &self.placed {
+            let data = svg_path(&self.shapes[placed.shape].segments, &placed.transformation);
+            let fill = if dark {
+                &placed.word.color_dark
+            } else {
+                &placed.word.color
+            };
+            let _ = writeln!(
+                svg,
+                "<path fill=\"{fill}\" d=\"{data}\"><title>{}</title></path>",
+                xml_escape(&placed.word.text)
+            );
         }
-        s.push_str("</svg>\n");
-        s
+        svg.push_str("</svg>\n");
+        svg
     }
 
-    /// Raster version with alpha, `scale` device px per canvas px. Transparent unless `background`.
+    /// Render a PNG with alpha at `scale` device px per canvas px.
+    ///
+    /// Transparent unless `background` is given. Every colour must be `#rrggbb`.
     pub fn png(&self, scale: f32, background: Option<&str>, dark: bool) -> Result<Vec<u8>> {
-        let (w, h) = ((self.width as f32 * scale).round() as u32, (self.height as f32 * scale).round() as u32);
-        let mut pm = Pixmap::new(w, h).context("png size")?;
-        if let Some(bg) = background {
-            let (r, g, b) = hex(bg)?;
-            pm.fill(tiny_skia::Color::from_rgba8(r, g, b, 255));
+        let (width, height) = (
+            (self.width as f32 * scale).round() as u32,
+            (self.height as f32 * scale).round() as u32,
+        );
+        let mut pixmap = Pixmap::new(width, height).context("allocate the png canvas")?;
+        if let Some(background) = background {
+            let rgb: Rgb = background.parse()?;
+            pixmap.fill(tiny_skia::Color::from_rgba8(
+                rgb.red, rgb.green, rgb.blue, 255,
+            ));
         }
-        for p in &self.placed {
-            let (r, g, b) = hex(if dark { &p.word.color_dark } else { &p.word.color })?;
+        for placed in &self.placed {
+            let fill = if dark {
+                &placed.word.color_dark
+            } else {
+                &placed.word.color
+            };
+            let rgb: Rgb = fill.parse()?;
             let mut paint = Paint::default();
-            paint.set_color_rgba8(r, g, b, 255);
+            paint.set_color_rgba8(rgb.red, rgb.green, rgb.blue, 255);
             paint.anti_alias = true;
-            if let Some(path) = skia_path(&self.shapes[p.shape].segs, &p.xf) {
-                pm.fill_path(&path, &paint, FillRule::Winding, Transform::from_scale(scale, scale), None);
+            if let Some(path) =
+                skia_path(&self.shapes[placed.shape].segments, &placed.transformation)
+            {
+                pixmap.fill_path(
+                    &path,
+                    &paint,
+                    FillRule::Winding,
+                    Transform::from_scale(scale, scale),
+                    None,
+                );
             }
         }
-        pm.encode_png().context("encode png")
+        pixmap.encode_png().context("encode png")
     }
 }
 
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-}
-
-fn hex(c: &str) -> Result<(u8, u8, u8)> {
-    let h = c.trim_start_matches('#');
-    if h.len() != 6 {
-        bail!("colour `{c}` is not #rrggbb");
-    }
-    let v = u32::from_str_radix(h, 16).with_context(|| format!("colour `{c}`"))?;
-    Ok(((v >> 16) as u8, (v >> 8) as u8, v as u8))
+fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn opt(seed: u64) -> Options {
-        Options { width: 240, height: 140, seed, vertical: 0.3, gap: 2.0, contrast: 1.5, res: 2, min_size: 6.0 }
+    fn options(seed: u64) -> Options {
+        Options {
+            width: 240,
+            height: 140,
+            seed,
+            vertical: 0.3,
+            gap: 2.0,
+            contrast: 1.5,
+            res: 2,
+            min_size: 6.0,
+            fill: false,
+        }
     }
 
     fn words() -> Vec<Word> {
-        [("TypeScript", 10.0), ("Rust", 9.0), ("Kubernetes", 9.0), ("GitOps", 7.0), ("PHP", 6.0), ("GxP", 5.0), ("C#", 4.0), ("Flash", 3.0)]
-            .iter()
-            .map(|(t, w)| Word { text: (*t).into(), weight: *w, color: "#111318".into(), color_dark: "#e6e7ea".into(), related: vec![] })
-            .collect()
+        [
+            ("Kalsarikännit", 10.0),
+            ("Sisu", 9.0),
+            ("Kopfkino", 9.0),
+            ("Fajrant", 7.0),
+            ("Gapa", 6.0),
+            ("Kac", 5.0),
+            ("C#", 4.0),
+            ("Ohrwurm", 3.0),
+        ]
+        .iter()
+        .map(|(text, weight)| Word {
+            text: (*text).into(),
+            weight: *weight,
+            color: "#111318".into(),
+            color_dark: "#e6e7ea".into(),
+            related: vec![],
+        })
+        .collect()
     }
 
     #[test]
-    fn bitset_collision_respects_shift() {
-        let mut g = Grid::new(200, 4);
-        g.set(130, 1);
-        let xf = Xf { k: 1.0, x0: 0.0, y1: 0.0, pad: 0.0, wu: 0.0, rot: false, ox: 0.0, oy: 0.0, div: 1.0 };
-        let s = Sprite::with_cells(3, 1, 1, vec![0b111], xf);
-        assert!(g.collides(&s, 128, 1)); // spans 128..=130
-        assert!(!g.collides(&s, 131, 1));
-        assert!(!g.collides(&s, 128, 0));
-        assert!(!g.collides(&s, 126, 1) && !g.collides(&s, 127, 1));
-        g.place(&s, 62, 2); // straddles a word boundary
-        assert!(g.collides(&s, 63, 2) && g.collides(&s, 61, 2) && !g.collides(&s, 65, 2));
+    fn grid_collides_respects_word_boundary_shift() {
+        let mut grid = Grid::new(200, 4);
+        grid.set(130, 1);
+        let transformation = Transformation {
+            k: 1.0,
+            x0: 0.0,
+            y1: 0.0,
+            pad: 0.0,
+            wu: 0.0,
+            rotated: false,
+            ox: 0.0,
+            oy: 0.0,
+            div: 1.0,
+        };
+        let sprite = Sprite::with_cells(3, 1, 1, vec![0b111], transformation);
+        assert!(grid.collides(&sprite, 128, 1)); // spans 128..=130
+        assert!(!grid.collides(&sprite, 131, 1));
+        assert!(!grid.collides(&sprite, 128, 0));
+        assert!(!grid.collides(&sprite, 126, 1) && !grid.collides(&sprite, 127, 1));
+        grid.place(&sprite, 62, 2); // straddles a word boundary
+        assert!(
+            grid.collides(&sprite, 63, 2)
+                && grid.collides(&sprite, 61, 2)
+                && !grid.collides(&sprite, 65, 2)
+        );
     }
 
     #[test]
-    fn layout_is_deterministic_and_never_overlaps() {
+    fn generate_same_seed_is_deterministic_and_never_overlaps() {
         let font = crate::DEFAULT_FONT;
-        let a = generate(&words(), font, &opt(7), None).expect("layout");
-        let b = generate(&words(), font, &opt(7), None).expect("layout");
+        let a = generate(&words(), font, &options(7), None).expect("layout");
+        let b = generate(&words(), font, &options(7), None).expect("layout");
         assert_eq!(a.svg(None, false), b.svg(None, false));
         assert!(a.dropped.is_empty(), "dropped: {:?}", a.dropped);
         // OR of all sprites == sum of their bits <=> no two sprites share a pixel.
         assert_eq!(a.grid.count(), a.sprite_bits);
-        let c = generate(&words(), font, &opt(8), None).expect("layout");
+        let c = generate(&words(), font, &options(8), None).expect("layout");
         assert_ne!(a.svg(None, false), c.svg(None, false));
     }
 
     #[test]
-    fn source_parses_tiers_entries_and_lints_duplicates() {
-        let src: Source = toml::from_str(
-            r##"
-            terms = ["tsc"]
-            [colors]
-            accent = "#ff4f00"
-            [[tier]]
-            weight = 10
-            color = "accent"
-            words = [{ text = "TypeScript", related = ["TS"] }, "Rust"]
-            [[word]]
-            text = "rust"
-            weight = 3
-            "##,
-        )
-        .expect("parse");
-        let w = src.words();
-        assert_eq!(w[0].color, "#ff4f00");
-        assert_eq!(w[0].related, vec!["TS"]);
-        assert_eq!(w[2].color, "ink");
-        assert_eq!(src.terms, vec!["tsc"]);
-        assert_eq!(src.lint().len(), 1);
-        assert_eq!(w[0].color_dark, "#ff4f00"); // no [colors_dark] -> falls back to the light colour
+    fn generate_fill_adds_light_copies_without_overlap() {
+        let options = Options {
+            width: 480,
+            height: 160,
+            fill: true,
+            ..options(7)
+        };
+        let a = generate(&words(), crate::DEFAULT_FONT, &options, None).expect("layout");
+        let b = generate(&words(), crate::DEFAULT_FONT, &options, None).expect("layout");
+        assert_eq!(a.svg(None, false), b.svg(None, false));
+        assert!(a.dropped.is_empty(), "dropped: {:?}", a.dropped);
+        assert_eq!(a.grid.count(), a.sprite_bits);
+        let copies: Vec<_> = a.placed.iter().filter(|p| p.copy).collect();
+        assert!(!copies.is_empty());
+        // One copy per word at most, and never of the heaviest word.
+        assert!(copies.len() <= words().len());
+        assert!(copies.iter().all(|p| p.word.text != "Kalsarikännit"));
+        // Originals come first, then the copies.
+        assert!(
+            a.placed[..a.placed.len() - copies.len()]
+                .iter()
+                .all(|p| !p.copy)
+        );
+    }
+
+    #[test]
+    fn generate_fill_off_adds_no_copies() {
+        let cloud = generate(&words(), crate::DEFAULT_FONT, &options(7), None).expect("layout");
+        assert!(cloud.placed.iter().all(|p| !p.copy));
+    }
+
+    #[test]
+    fn spots_first_is_centre_last_is_corner() {
+        let spots = Spots::new(&Grid::new(40, 20));
+        assert_eq!(spots.0.first(), Some(&(20, 10)));
+        assert_eq!(spots.0.last(), Some(&(0, 0)));
+    }
+
+    #[test]
+    fn options_from_style_fill_defaults_off() {
+        assert!(!Options::default().fill);
+        let style = Style {
+            fill: Some(true),
+            ..Style::default()
+        };
+        assert!(Options::from_style(&style).fill);
+    }
+
+    #[test]
+    fn shape_parse_known_names_roundtrip() {
+        for shape in [Shape::Rect, Shape::Ellipse, Shape::Circle] {
+            assert_eq!(shape.name().parse::<Shape>().expect("known"), shape);
+        }
+        assert!("heart".parse::<Shape>().is_err());
+    }
+
+    #[test]
+    fn png_named_colour_errors() {
+        let mut words = words();
+        words[0].color = "ink".into();
+        let cloud = generate(&words, crate::DEFAULT_FONT, &options(7), None).expect("layout");
+        let error = cloud.png(1.0, None, false).expect_err("not #rrggbb");
+        assert_eq!(error.to_string(), "colour `ink` is not #rrggbb");
     }
 }

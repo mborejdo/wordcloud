@@ -6,6 +6,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 permissions:
   contents: read
 
@@ -13,17 +21,31 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - uses: actions/checkout@v7
+      # The toolchain (with rustfmt and clippy) comes from rust-toolchain.toml; rustup
+      # installs it on the first cargo call.
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo clippy --lib --no-default-features -- -D warnings
-      - run: cargo test --all-features
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: fmt
+        run: cargo fmt --check
+      - name: clippy
+        run: |
+          cargo clippy --all-targets --all-features --locked -- -D warnings
+          cargo clippy --lib --no-default-features --locked -- -D warnings
+      - name: test
+        run: cargo test --all-features --locked
+      - name: doc
+        run: cargo doc --no-deps --all-features --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: deny
+        run: cargo deny check
       - name: Render the example
-        run: cargo run --release -- examples/cloud.toml --out out/cloud.svg --png 1
+        run: cargo run --release --locked -- examples/cloud.toml --out out/cloud.svg --png 1
       - uses: actions/upload-artifact@v4
         with:
           name: example-cloud
@@ -33,7 +55,7 @@ jobs:
     # The composite action end to end (prebuilt binary, or a source build before the first release).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./
         with:
           wordlist: examples/cloud.toml

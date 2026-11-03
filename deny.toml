@@ -1,0 +1,36 @@
+# cargo-deny: advisories, licences, bans, sources. Run: make deny
+[advisories]
+yanked = "deny"
+# The shaping stack. Both crates are declared unmaintained upstream; wordcloud only reads the
+# font it is given (the bundled one by default), nothing attacker-facing. Moving to harfrust +
+# skrifa is the fix and would change glyph output, so it is its own release.
+ignore = [
+    "RUSTSEC-2026-0206", # rustybuzz unmaintained, successor harfrust
+    "RUSTSEC-2026-0192", # ttf-parser unmaintained, successor skrifa
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "0BSD",
+    "CDLA-Permissive-2.0",
+    "Unlicense",
+]
+confidence-threshold = 0.9
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

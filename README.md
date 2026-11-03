@@ -62,6 +62,9 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
 3. Largest first, each word walks an Archimedean spiral from a seeded start near the centre; the
    first spot where its bits miss everything already placed wins.
 4. Optional shape: `--shape circle|ellipse` or a `--mask` image (dark pixels take words).
+   Optional `--fill` (or `[style] fill = true`): a vertical word that finds no room is set
+   horizontally, and after the layout small copies of the lighter words fill the gaps, centre
+   first, so the canvas is covered edge to edge.
 5. One global scale is found by bisection: the largest at which every word fits.
 6. Output is glyph paths, so the SVG needs no font. Same list + same seed = same picture.
 
@@ -77,20 +80,50 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
   words already in the list.
 - `[semantic] backend = "embed"`: any OpenAI-compatible embeddings endpoint (sends the word list only).
 - `--explain` prints every final weight and why.
-- Flags: `--width --height --seed --shape --vertical --font --mask --png --no-dark`.
+- Flags: `--width --height --seed --shape --vertical --fill --font --mask --png --no-dark`.
+- A wide banner for a profile README: `[style] width = 1600, height = 600, shape = "rect",
+  fill = true`, embedded with `width="100%"`. Copies never outgrow their word, the heavier
+  half of the list is never copied, and a copy keeps away from its original.
 
-As a library: `default-features = false` drops the CLI and HTTP parts.
+</details>
+
+## As a library
+
+`default-features = false` drops the CLI and HTTP parts.
+
+```toml
+wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v1.0.0", default-features = false }
+```
 
 ```rust
-let src = wordcloud::Source::load("cloud.toml".as_ref())?;
-let (words, _) = wordcloud::weigh(&src, "", &wordcloud::semantic::Offline, &[]);
-let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &wordcloud::Options::from_style(&src.style), None)?;
+let source = wordcloud::Source::load("cloud.toml".as_ref())?;
+let (words, _) = wordcloud::weigh(&source, "", &wordcloud::semantic::Offline, &[]);
+let options = wordcloud::Options::from_style(&source.style);
+let mask = wordcloud::MaskImage::shape("circle", &options)?;
+let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &options, Some(&mask))?;
 std::fs::write("cloud.svg", cloud.svg(None, false))?;
 ```
 
-</details>
+`cargo doc --open` has the rest; every public item is documented.
+
+## Development
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+cargo deny check
+```
+
+That is what CI runs. The lints are strict (clippy `pedantic` and `nursery`, no `unwrap` or
+`println!` outside tests and the CLI, docs on every public item); an `#[allow]` carries its
+reason. Same list + same seed must give the same picture, so a change that moves words is a
+breaking change and goes in the [CHANGELOG](CHANGELOG.md).
+
+Releases: bump `version` in `Cargo.toml`, push the tag `vX.Y.Z`. CI checks that they match,
+builds the binaries and moves `vX`.
 
 ## License
 
 Code: MIT or Apache-2.0. Bundled font: Bricolage Grotesque, SIL Open Font License 1.1.
-Releases: push `vX.Y.Z`, CI builds the binaries and moves `vX`.

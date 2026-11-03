@@ -3,18 +3,32 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-pub fn get_json(url: &str, token: Option<&str>) -> Result<Value> {
-    let mut req = ureq::get(url).header("Accept", "application/vnd.github+json").header("User-Agent", "wordcloud");
-    if let Some(t) = token {
-        req = req.header("Authorization", &format!("Bearer {t}"));
+/// GET `url` as JSON, with a bearer token if given.
+pub(crate) fn get_json(url: &str, token: Option<&str>) -> Result<Value> {
+    let mut request = ureq::get(url)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "wordcloud");
+    if let Some(token) = token {
+        request = request.header("Authorization", &format!("Bearer {token}"));
     }
-    req.call().with_context(|| format!("GET {url}"))?.body_mut().read_json().context("parse JSON")
+    request
+        .call()
+        .with_context(|| format!("GET {url}"))?
+        .body_mut()
+        .read_json()
+        .context("parse JSON")
 }
 
-pub fn post_json(url: &str, body: &Value, token: Option<&str>) -> Result<Value> {
-    let mut req = ureq::post(url).header("User-Agent", "wordcloud");
-    if let Some(t) = token {
-        req = req.header("Authorization", &format!("Bearer {t}"));
+/// POST `body` to `url` as JSON and read JSON back, with a bearer token if given.
+pub(crate) fn post_json(url: &str, body: &Value, token: Option<&str>) -> Result<Value> {
+    let mut request = ureq::post(url).header("User-Agent", "wordcloud");
+    if let Some(token) = token {
+        request = request.header("Authorization", &format!("Bearer {token}"));
     }
-    req.send_json(body).with_context(|| format!("POST {url}"))?.body_mut().read_json().context("parse JSON")
+    request
+        .send_json(body)
+        .with_context(|| format!("POST {url}"))?
+        .body_mut()
+        .read_json()
+        .context("parse JSON")
 }

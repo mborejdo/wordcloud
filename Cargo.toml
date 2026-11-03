@@ -1,20 +1,24 @@
 [package]
 name = "wordcloud"
-version = "0.1.0"
+version = "1.1.0"
 edition = "2024"
+# The highest floor any dependency declares (image, time). The MSRV-aware resolver holds a
+# dependency back below its own floor, so keep this at or above it.
 rust-version = "1.88"
+authors = ["Michael Borejdo"]
 description = "Word clouds from real glyph outlines: shaped text, bitmask packing on an Archimedean spiral, transparent SVG/PNG."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mborejdo/wordcloud"
+readme = "README.md"
 keywords = ["wordcloud", "svg", "typography", "visualization"]
 categories = ["visualization", "command-line-utilities"]
-include = ["src/**", "fonts/**", "README.md", "LICENSE-*", "Cargo.toml"]
+include = ["src/**", "fonts/**", "README.md", "CHANGELOG.md", "LICENSE-*", "Cargo.toml"]
 
 [features]
 default = ["cli", "http"]
 # The `wordcloud` binary.
 cli = ["dep:clap"]
-# GitHub activity boost + embeddings backend over HTTP.
+# GitHub activity boost and the embeddings backend over HTTP.
 http = ["dep:ureq"]
 
 [[bin]]
@@ -27,11 +31,50 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
-rustybuzz = "0.20"   # shaping; re-exports ttf-parser for glyph outlines
-tiny-skia = "0.12"   # coverage rasterisation + PNG
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }  # mask images
+# Shaping; re-exports ttf-parser for the glyph outlines.
+rustybuzz = "0.20"
+# Coverage rasterisation and PNG.
+tiny-skia = "0.12"
+# Mask images.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 clap = { version = "4", features = ["derive"], optional = true }
 ureq = { version = "3", features = ["json"], optional = true }
+
+[lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+# Unavoidable with many transitive deps.
+multiple_crate_versions = "allow"
+module_name_repetitions = "allow"
+# No required `# Errors` / `# Panics` sections, no doc-paragraph length limit.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+too_long_first_doc_paragraph = "allow"
+# Contradicts rustc `unreachable_pub`, which is kept.
+redundant_pub_crate = "allow"
+# Stricter than the groups: no panicking shortcuts or stray output in library code (tests are
+# exempt, see clippy.toml), and every `#[allow]` says why.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+allow_attributes_without_reason = "warn"
+
+[lints.rustdoc]
+all = { level = "warn", priority = -1 }
 
 [profile.release]
 lto = "thin"
