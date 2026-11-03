@@ -6,10 +6,10 @@ background, one small binary - or a GitHub Action that keeps your profile cloud 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="examples/cloud-dark.svg">
-  <img src="examples/cloud.svg" alt="Word cloud of favourite German, Polish and Finnish words: Kalsarikännit, Schnapsidee, Chrząszcz and more" width="560">
+  <img src="examples/cloud.svg" alt="Word cloud of funny German, Polish and Finnish words: Kalsarikännit, Schnapsidee, Kac moralny and more" width="560">
 </picture>
 
-<sub>Favourite words from German, Polish and Finnish. _Kalsarikännit_: Finnish for drinking at home,
+<sub>Funny words from German, Polish and Finnish. _Kalsarikännit_: Finnish for drinking at home,
 in your underwear, with no plans to go out.</sub>
 
 ## Quick start

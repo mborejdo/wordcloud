@@ -1,5 +1,5 @@
 # Example word list - the cloud on github.com/mborejdo.
-# Favourite words from the three languages in my life: German, Polish, Finnish.
+# Funny words from the three languages in my life: German, Polish, Finnish.
 
 terms = []
 
@@ -55,40 +55,40 @@ words = ["Schnapsidee"]
 [[tier]]
 weight = 9
 color = "accent"
-words = ["Chrząszcz"]
+words = ["Kac moralny"]
 
 [[tier]]
 weight = 8
 color = "ink"
-words = ["Sisu", "Feierabend", "Kombinować", "Kummerspeck"]
+words = ["Kummerspeck", "Poronkusema", "Kombinować", "Verschlimmbessern"]
 
 [[tier]]
 weight = 7
 color = "ink"
-words = ["Löyly", "Verschlimmbessern", "Szczebrzeszyn", "Ohrwurm", "Pierogi", "Poronkusema"]
+words = ["Innerer Schweinehund", "Hyppytyynytyydytys", "Chrząszcz", "Kopfkino", "Ciepłe kluchy", "Myötähäpeä"]
 
 [[tier]]
 weight = 6
 color = "ink"
-words = ["Treppenwitz", "Sitzfleisch", "Kaamos", "Bigos", "Fremdschämen", "Sauna", "Na zdrowie", "Gemütlichkeit"]
+words = ["Drachenfutter", "Hätähousu", "Fajrant", "Warmduscher", "Treppenwitz", "Bratkartoffelverhältnis", "Obciach", "Morkkis"]
 
 [[tier]]
 weight = 5
 color = "muted"
 words = [
-  "Drachenfutter", "Torschlusspanik", "Myötähäpeä", "Kac", "Purzelbaum", "Zungenbrecher",
-  "Weltschmerz", "Smacznego", "Morkkis", "Warmduscher", "Fernweh", "Załatwić",
+  "Schattenparker", "Erklärbär", "Bimber", "Szczebrzeszyn", "Torschlusspanik", "Quatschkopf",
+  "Dünnbrettbohrer", "Gapa", "Fremdschämen", "Luftschloss", "Kalsarikahvit", "Ohrwurm",
 ]
 
 [[tier]]
 weight = 4
 color = "muted"
 words = [
-  "Hyppytyynytyydytys", "Handschuhschneeballwerfer", "Kiełbasa", "Ogórki", "Salmiakki",
-  "Fingerspitzengefühl", "Brezel", "Mökki", "Żubr", "Schadenfreude", "Sauerkraut",
+  "Handschuhschneeballwerfer", "Hosentaschenformat", "Załatwić", "Klugscheißer", "Weichei",
+  "Lällärit", "Kac", "Zungenbrecher", "Purzelbaum", "Sitzfleisch",
 ]
 
 [[tier]]
 weight = 3
 color = "soft"
-words = ["Gänsehaut", "Kartoffel", "Pączki", "Joulupukki"]
+words = ["Gänsehaut", "Sisu", "Löyly", "Feierabend", "Na zdrowie"]
