@@ -1,12 +1,14 @@
-# For the PUBLIC profile repo mborejdo/mborejdo: .github/workflows/wordcloud.yml
-# Renders cloud.toml (in that repo) every 6 hours and commits the images only when they changed.
-# Public data only: the word list itself plus recent public GitHub languages/topics.
+# For a profile repo (e.g. you/you): .github/workflows/wordcloud.yml
+# Renders cloud.toml once a day with a fresh seed, so the layout reshuffles, and on every
+# change to the word list. Public data only: the word list itself.
 name: wordcloud
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 5 * * *"
   workflow_dispatch:
+  push:
+    paths: [cloud.toml]
 
 permissions:
   contents: write
@@ -26,7 +28,7 @@ jobs:
           wordlist: cloud.toml
           out: cloud.svg
           png: "2"
-          github-user: ${{ github.repository_owner }}
+          seed: ${{ github.run_number }}
 
       - name: Commit if changed
         run: |

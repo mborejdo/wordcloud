@@ -1,22 +1,7 @@
-# Word list for mborejdo/wordcloud - the cloud on github.com/mborejdo.
-# Public on purpose: skills and tech only. No client, employer, repo or internal names.
-#
-#   One tier = one base weight (10 = biggest). Order inside a tier does not matter, the seed shuffles it.
-#   A tier word is "Text" or { text = "Text", related = ["alias", ...] }.
-#   `terms` fold into the word they belong to (+term_boost each); `--github <user>` adds a small
-#   boost from recent public languages/topics, but only to words listed here.
-#   Order to keep: TypeScript > Rust > Kubernetes (check with `wordcloud cloud.toml --explain`).
+# Example word list - the cloud on github.com/mborejdo.
+# Favourite words from the three languages in my life: German, Polish, Finnish.
 
-# Raw terms that fold into the words above.
-# Each one must fold into a word above; `--explain` flags anything that would become a new word.
-terms = [
-  "TypeScript", "tsc", "JavaScript", "JS", "NextJS", "ReactNative", "VueJS", "Webcomponents",
-  "Tailwind", "nodejs", "PHP", "Symfony", "Composer", "PHPUnit", "Rust", "Kubernetes",
-  "ArgoCD", "Docker", "Container", "Terraform", "CI/CD", "Pipelines", "DevOps", "Linux", "unix",
-  "PostgreSQL", "SQL", "OpenAPI", "REST", "API", "Testing", "TDD", "E2E", "Playwright",
-  "Documentation", "Dokumentation", "Azure", "GxP", "GMP", "GDP", "ecommerce", "Pimcore",
-  "StiboDX-CUE", "MSD", "architecture", "AI",
-]
+terms = []
 
 [style]
 width = 1000
@@ -60,54 +45,50 @@ soft = "#7d8590"
 [[tier]]
 weight = 10
 color = "accent"
-words = [{ text = "TypeScript", related = ["tsc", "typed language", "TS"] }]
+words = ["Kalsarikännit"]
 
 [[tier]]
 weight = 9.5
 color = "accent"
-words = ["Rust"]
+words = ["Schnapsidee"]
 
 [[tier]]
 weight = 9
 color = "accent"
-words = ["Kubernetes"]
+words = ["Chrząszcz"]
 
 [[tier]]
 weight = 8
 color = "ink"
-words = ["DevOps", "Architecture", "GitOps", "APIs", "Next.js", "React"]
+words = ["Sisu", "Feierabend", "Kombinować", "Kummerspeck"]
 
 [[tier]]
 weight = 7
 color = "ink"
-words = ["PHP", "B2B Commerce", "System Design", "MCP", "AI Agents", "OAuth 2.1", "GxP", "Fullstack", "Platform Engineering"]
+words = ["Löyly", "Verschlimmbessern", "Szczebrzeszyn", "Ohrwurm", "Pierogi", "Poronkusema"]
 
 [[tier]]
 weight = 6
 color = "ink"
-words = [
-  "JavaScript", "Node.js", "PostgreSQL", "Docker", "Terraform", "Azure", "API Gateway",
-  "Infrastructure as Code", "OpenAPI", "React Native", "Stibo DX", "Media System Design",
-]
+words = ["Treppenwitz", "Sitzfleisch", "Kaamos", "Bigos", "Fremdschämen", "Sauna", "Na zdrowie", "Gemütlichkeit"]
 
 [[tier]]
 weight = 5
 color = "muted"
 words = [
-  "Axum", "Tokio", "OIDC", "REST", "SQL", "Linux", "Redis", "Vue", "Lit", "Web Components",
-  "Tailwind", "Headless Commerce", "Agent Workflows", "RAG", "Tooling", "Developer Portals",
-  "Automated Tests", "Documentation", "Data Processing", "Dashboards",
+  "Drachenfutter", "Torschlusspanik", "Myötähäpeä", "Kac", "Purzelbaum", "Zungenbrecher",
+  "Weltschmerz", "Smacznego", "Morkkis", "Warmduscher", "Fernweh", "Załatwić",
 ]
 
 [[tier]]
 weight = 4
 color = "muted"
 words = [
-  "Python", "C#", "ERP", "PIM", "Search", "SharePoint", "Microsoft Graph", "Object Storage",
-  "Hetzner", "ESLint", "CMS", "Widgets", "Proofs of Concept", "Product Configurator",
+  "Hyppytyynytyydytys", "Handschuhschneeballwerfer", "Kiełbasa", "Ogórki", "Salmiakki",
+  "Fingerspitzengefühl", "Brezel", "Mökki", "Żubr", "Schadenfreude", "Sauerkraut",
 ]
 
 [[tier]]
 weight = 3
 color = "soft"
-words = ["Flash", "Flex", "ActionScript", "Since 2007"]
+words = ["Gänsehaut", "Kartoffel", "Pączki", "Joulupukki"]
