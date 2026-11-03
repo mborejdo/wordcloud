@@ -1,0 +1,41 @@
+# For the PUBLIC profile repo mborejdo/mborejdo: .github/workflows/wordcloud.yml
+# Renders cloud.toml (in that repo) every 6 hours and commits the images only when they changed.
+# Public data only: the word list itself plus recent public GitHub languages/topics.
+name: wordcloud
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wordcloud
+  cancel-in-progress: false
+
+jobs:
+  cloud:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mborejdo/wordcloud@v1
+        with:
+          wordlist: cloud.toml
+          out: cloud.svg
+          png: "2"
+          github-user: ${{ github.repository_owner }}
+
+      - name: Commit if changed
+        run: |
+          git add cloud.svg cloud-dark.svg cloud.png cloud-dark.png
+          if git diff --cached --quiet; then
+            echo "cloud unchanged - nothing to commit"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Update word cloud"
+          git push

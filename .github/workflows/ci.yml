@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --lib --no-default-features -- -D warnings
+      - run: cargo test --all-features
+      - name: Render the example
+        run: cargo run --release -- examples/cloud.toml --out out/cloud.svg --png 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-cloud
+          path: out/
+
+  action:
+    # The composite action end to end (prebuilt binary, or a source build before the first release).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          wordlist: examples/cloud.toml
+          out: out/action/cloud.svg
+          png: "1"
+      - run: test -s out/action/cloud.svg && test -s out/action/cloud-dark.svg && test -s out/action/cloud.png

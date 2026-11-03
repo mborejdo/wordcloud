@@ -1,0 +1,114 @@
+name: wordcloud
+description: Render a TOML word list to a transparent SVG word cloud, plus a dark variant and optional PNGs.
+author: Michael Borejdo
+branding:
+  icon: cloud
+  color: orange
+
+inputs:
+  wordlist:
+    description: Word list TOML (same format as examples/cloud.toml).
+    default: cloud.toml
+  out:
+    description: SVG output path. <stem>-dark.svg goes next to it, and with png also <stem>.png / <stem>-dark.png.
+    default: cloud.svg
+  png:
+    description: PNG scale (px per canvas px). Empty = no PNG.
+    default: "2"
+  width:
+    description: Canvas width in px (default from [style]).
+    default: ""
+  height:
+    description: Canvas height in px (default from [style]).
+    default: ""
+  seed:
+    description: Layout seed (default from [style]).
+    default: ""
+  shape:
+    description: rect, ellipse or circle (default from [style]).
+    default: ""
+  github-user:
+    description: Boost curated words by this user's recent public languages/topics. Empty = off.
+    default: ""
+  version:
+    description: Release tag of the prebuilt binary, or "latest".
+    default: latest
+  token:
+    description: Token for the release download and the GitHub API (rate limits only - public data).
+    default: ${{ github.token }}
+
+outputs:
+  svg:
+    description: Path of the light SVG.
+    value: ${{ steps.render.outputs.svg }}
+  dark-svg:
+    description: Path of the dark SVG.
+    value: ${{ steps.render.outputs.dark-svg }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install wordcloud
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        WC_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) target=x86_64-unknown-linux-gnu ;;
+          macOS-ARM64) target=aarch64-apple-darwin ;;
+          *) target="" ;;
+        esac
+        dir="${RUNNER_TEMP}/wordcloud-bin"
+        mkdir -p "$dir"
+        asset="wordcloud-${target}.tar.gz"
+        got=""
+        if [ -n "$target" ]; then
+          if [ "$WC_VERSION" = latest ]; then
+            gh release download --repo mborejdo/wordcloud --pattern "$asset" --dir "$dir" --clobber && got=1 || true
+          else
+            gh release download "$WC_VERSION" --repo mborejdo/wordcloud --pattern "$asset" --dir "$dir" --clobber && got=1 || true
+          fi
+        fi
+        if [ -n "$got" ]; then
+          tar -xzf "$dir/$asset" -C "$dir"
+        else
+          echo "::notice::no prebuilt wordcloud for ${RUNNER_OS}-${RUNNER_ARCH} - building from source"
+          case "$ACTION_REF" in
+            v[0-9]*) from=(--tag "$ACTION_REF") ;;
+            *) from=() ;;
+          esac
+          cargo install --git https://github.com/mborejdo/wordcloud "${from[@]+"${from[@]}"}" --locked --root "$dir" wordcloud
+          mv "$dir/bin/wordcloud" "$dir/wordcloud"
+        fi
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/wordcloud" --version
+
+    - name: Render
+      id: render
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        WC_WORDLIST: ${{ inputs.wordlist }}
+        WC_OUT: ${{ inputs.out }}
+        WC_PNG: ${{ inputs.png }}
+        WC_WIDTH: ${{ inputs.width }}
+        WC_HEIGHT: ${{ inputs.height }}
+        WC_SEED: ${{ inputs.seed }}
+        WC_SHAPE: ${{ inputs.shape }}
+        WC_GITHUB: ${{ inputs.github-user }}
+      run: |
+        set -euo pipefail
+        args=("$WC_WORDLIST" --out "$WC_OUT")
+        [ -n "$WC_PNG" ] && args+=(--png "$WC_PNG")
+        [ -n "$WC_WIDTH" ] && args+=(--width "$WC_WIDTH")
+        [ -n "$WC_HEIGHT" ] && args+=(--height "$WC_HEIGHT")
+        [ -n "$WC_SEED" ] && args+=(--seed "$WC_SEED")
+        [ -n "$WC_SHAPE" ] && args+=(--shape "$WC_SHAPE")
+        [ -n "$WC_GITHUB" ] && args+=(--github "$WC_GITHUB")
+        wordcloud "${args[@]}"
+        stem="${WC_OUT%.svg}"
+        echo "svg=$WC_OUT" >> "$GITHUB_OUTPUT"
+        echo "dark-svg=${stem}-dark.svg" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,38 @@
+[package]
+name = "wordcloud"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Word clouds from real glyph outlines: shaped text, bitmask packing on an Archimedean spiral, transparent SVG/PNG."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mborejdo/wordcloud"
+keywords = ["wordcloud", "svg", "typography", "visualization"]
+categories = ["visualization", "command-line-utilities"]
+include = ["src/**", "fonts/**", "README.md", "LICENSE-*", "Cargo.toml"]
+
+[features]
+default = ["cli", "http"]
+# The `wordcloud` binary.
+cli = ["dep:clap"]
+# GitHub activity boost + embeddings backend over HTTP.
+http = ["dep:ureq"]
+
+[[bin]]
+name = "wordcloud"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+rustybuzz = "0.20"   # shaping; re-exports ttf-parser for glyph outlines
+tiny-skia = "0.12"   # coverage rasterisation + PNG
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }  # mask images
+clap = { version = "4", features = ["derive"], optional = true }
+ureq = { version = "3", features = ["json"], optional = true }
+
+[profile.release]
+lto = "thin"
+strip = true
