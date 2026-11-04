@@ -3,6 +3,14 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## 1.1.1 - 2026-11-04
+
+### Changed
+
+- Toolchain for working on the repo: Rust 1.99.1 (was 1.98.1). The crate still builds on
+  `rust-version` 1.88 and newer.
+- Dependency update (`toml_writer` 1.2.0). No change to any layout.
+
 ## 1.1.0 - 2026-11-03
 
 ### Added

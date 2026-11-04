@@ -23,7 +23,7 @@ fn example_word_list_lints_clean() -> Result<()> {
 fn example_word_list_small_canvas_places_every_word() -> Result<()> {
     let source = example()?;
     let (words, ignored) = wordcloud::weigh(&source, "", &Offline, &[]);
-    assert!(ignored.is_empty());
+    assert_eq!(ignored.len(), 0, "ignored: {ignored:?}");
     let options = Options {
         width: 400,
         height: 400,
@@ -37,6 +37,6 @@ fn example_word_list_small_canvas_places_every_word() -> Result<()> {
     let svg = cloud.svg(None, true);
     assert!(svg.contains("<title>Kalsarikännit</title>"));
     assert!(!svg.contains("<text"), "glyph paths only, no font needed");
-    assert!(!cloud.png(1.0, None, false)?.is_empty());
+    assert_ne!(cloud.png(1.0, None, false)?.len(), 0);
     Ok(())
 }
