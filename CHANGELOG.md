@@ -9,6 +9,8 @@ change that moves words for the same list and seed counts as breaking.
 
 - `--no-default-features --features cli` no longer fails to compile: the binary needs `http`
   too and is skipped without it. The library builds as before.
+- `Cloud::svg` escapes the background and the fill colours in their attributes: a colour
+  holding a quote no longer breaks the SVG. A `#rrggbb` colour is written as before.
 
 ### Changed
 

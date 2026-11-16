@@ -982,6 +982,7 @@ impl Cloud {
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n"
         );
         if let Some(background) = background {
+            let background = attr_escape(background);
             let _ = writeln!(
                 svg,
                 "<rect width=\"{w}\" height=\"{h}\" fill=\"{background}\"/>"
@@ -989,7 +990,7 @@ impl Cloud {
         }
         for placed in &self.placed {
             let data = svg_path(&self.shapes[placed.shape].segments, &placed.transformation);
-            let fill = placed.fill(dark);
+            let fill = attr_escape(placed.fill(dark));
             let _ = writeln!(
                 svg,
                 "<path fill=\"{fill}\" d=\"{data}\"><title>{}</title></path>",
@@ -1042,9 +1043,22 @@ fn xml_escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// Escape `text` for a double-quoted attribute: a colour is written as given, so a quote in
+/// it must not end the attribute.
+fn attr_escape(text: &str) -> String {
+    xml_escape(text).replace('"', "&quot;")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attr_escape_keeps_a_colour_and_closes_no_attribute() {
+        assert_eq!(attr_escape("#1a2b3c"), "#1a2b3c");
+        assert_eq!(attr_escape("red\" onload=\"x"), "red&quot; onload=&quot;x");
+        assert_eq!(attr_escape("a<b&c"), "a&lt;b&amp;c");
+    }
 
     fn options(seed: u64) -> Options {
         Options {
