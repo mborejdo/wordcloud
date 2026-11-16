@@ -3,5 +3,3 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
-# Proper names `doc_markdown` should not require backticks for. ".." keeps clippy's defaults.
-doc-valid-idents = ["..", "GitHub", "OpenAI", "TrueType", "OpenType"]
