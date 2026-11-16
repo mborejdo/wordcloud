@@ -9,6 +9,7 @@ authors = ["Michael Borejdo"]
 description = "Word clouds from real glyph outlines: shaped text, bitmask packing on an Archimedean spiral, transparent SVG/PNG."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mborejdo/wordcloud"
+homepage = "https://github.com/mborejdo/wordcloud"
 readme = "README.md"
 keywords = ["wordcloud", "svg", "typography", "visualization"]
 categories = ["visualization", "command-line-utilities"]
