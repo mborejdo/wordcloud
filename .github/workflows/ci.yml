@@ -31,13 +31,15 @@ jobs:
         with:
           tool: cargo-deny
       - name: fmt
-        run: cargo fmt --check
+        run: cargo fmt --all --check
       - name: clippy
         run: |
           cargo clippy --all-targets --all-features --locked -- -D warnings
-          cargo clippy --lib --no-default-features --locked -- -D warnings
+          cargo clippy --all-targets --no-default-features --locked -- -D warnings
       - name: test
-        run: cargo test --all-features --locked
+        run: |
+          cargo test --all-features --locked
+          cargo test --no-default-features --locked
       - name: doc
         run: cargo doc --no-deps --all-features --locked
         env:

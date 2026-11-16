@@ -109,14 +109,17 @@ std::fs::write("cloud.svg", cloud.svg(None, false))?;
 ## Development
 
 ```sh
-cargo fmt --check
+cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets --no-default-features -- -D warnings
 cargo test --all-features
+cargo test --no-default-features
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 cargo deny check
 ```
 
-That is what CI runs. The lints are strict (clippy `pedantic` and `nursery`, no `unwrap` or
+That is what CI runs, the second clippy and test line for the library without the CLI and
+HTTP parts. The lints are strict (clippy `pedantic` and `nursery`, no `unwrap` or
 `println!` outside tests and the CLI, docs on every public item); an `#[allow]` carries its
 reason. Same list + same seed must give the same picture, so a change that moves words is a
 breaking change and goes in the [CHANGELOG](CHANGELOG.md).
