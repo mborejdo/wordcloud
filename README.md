@@ -87,7 +87,7 @@ wordcloud cloud.toml --shape examples/star.png --width 560 --height 560 --fill
 ## On your GitHub profile
 
 ```yaml
-- uses: mborejdo/wordcloud@v1
+- uses: mborejdo/wordcloud@v2
   with:
     wordlist: cloud.toml
     out: cloud.svg
@@ -102,7 +102,7 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
 ## Library
 
 ```toml
-wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v1.1.1", default-features = false }
+wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v2.0.0", default-features = false }
 ```
 
 ```rust

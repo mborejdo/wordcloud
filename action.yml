@@ -25,7 +25,7 @@ inputs:
     description: Layout seed (default from [style]).
     default: ""
   shape:
-    description: rect, ellipse or circle (default from [style]).
+    description: rect, ellipse, circle or an image whose dark pixels take words (default from [style]).
     default: ""
   github-user:
     description: Boost curated words by this user's recent public languages/topics. Empty = off.
