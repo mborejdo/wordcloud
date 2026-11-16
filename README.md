@@ -1,8 +1,11 @@
 # wordcloud
 
-Word clouds that actually fit together. Every word is packed by its real letter shapes, not by
-boxes, so the cloud gets dense and stays readable. Light and dark from one layout, transparent
-background, one small binary - or a GitHub Action that keeps your profile cloud fresh.
+A word list in, a word cloud out.
+
+Every word is packed by its real letter shapes, not by boxes, so the cloud gets dense and stays
+readable. One layout gives a light and a dark picture on a transparent background, as SVG and
+PNG. The words fill the canvas, a circle or any picture you hand it. One small binary, or a
+GitHub Action that keeps the cloud on your profile fresh.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="examples/cloud-dark.svg">
@@ -12,12 +15,30 @@ background, one small binary - or a GitHub Action that keeps your profile cloud 
 <sub>Funny words from German, Polish and Finnish. _Kalsarikännit_: Finnish for drinking at home,
 in your underwear, with no plans to go out.</sub>
 
-## Quick start
+## Install
 
-    cargo install --git https://github.com/mborejdo/wordcloud --locked
-    wordcloud cloud.toml --png        # cloud.svg, cloud-dark.svg (+ PNGs)
+```sh
+cargo install --git https://github.com/mborejdo/wordcloud --locked
+```
 
-A word list is a bit of TOML - bigger weight, bigger word:
+## Usage
+
+```sh
+wordcloud cloud.toml                       # cloud.svg and cloud-dark.svg
+wordcloud cloud.toml --png                 # the PNGs too
+wordcloud cloud.toml --shape circle        # a built-in shape: rect, ellipse, circle
+wordcloud cloud.toml --shape star.png      # any picture as the shape
+wordcloud cloud.toml --fill                # small copies of the lighter words fill the gaps
+wordcloud cloud.toml --seed 7              # another seed, another layout
+wordcloud cloud.toml --explain             # every final weight and why
+wordcloud --help                           # all flags
+```
+
+The same list and seed always give the same picture.
+
+## Word list
+
+A bit of TOML. A bigger weight gives a bigger word:
 
 ```toml
 [style]
@@ -36,7 +57,32 @@ color = "ink"
 words = ["Sisu", "Feierabend", "Kombinować"]
 ```
 
-Full example with colours for light and dark: [`examples/cloud.toml`](examples/cloud.toml).
+`[style]` takes what the flags take: `width`, `height`, `seed`, `font`, `shape`, `invert`,
+`vertical`, `fill`. A flag wins over the list. The full example, with colours for light and
+dark, is [`examples/cloud.toml`](examples/cloud.toml).
+
+## Shapes
+
+<img src="examples/star-cloud.png" alt="The same words filling a star" width="280" align="right">
+
+```sh
+wordcloud cloud.toml --shape examples/star.png --width 560 --height 560 --fill
+```
+
+- The picture is black on white: words go where it is dark. `--invert` swaps that.
+- It is stretched to the canvas, so give the canvas the picture's proportions.
+- `--fill` copies the lighter words into the gaps, small, up to four times each. That fills
+  the shape into its corners.
+- In the list: `shape = "star.png"`, relative to the list.
+
+## Weights
+
+- `terms` fold into the word they belong to (`k8s`, `kubectl` count for Kubernetes): exact
+  match, your `related` lists, a built-in alias table, light stemming.
+- `--corpus file.txt`: words your own text mentions more often grow. The text stays local.
+- `--github user`: words that match a user's recent public languages and topics grow.
+- `[semantic] backend = "embed"`: match terms with any OpenAI-compatible embeddings endpoint.
+  It sends the word list only.
 
 ## On your GitHub profile
 
@@ -50,50 +96,10 @@ Full example with colours for light and dark: [`examples/cloud.toml`](examples/c
 
 Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your profile repo
 (a daily reshuffle, plus a rebuild whenever you edit the list) and add
-[`examples/README-snippet.md`](examples/README-snippet.md) to its README.
+[`examples/README-snippet.md`](examples/README-snippet.md) to its README. For a wide banner:
+`width = 1600`, `height = 600`, `fill = true`.
 
-<details>
-<summary>How it works</summary>
-
-1. Each word is shaped with [rustybuzz](https://crates.io/crates/rustybuzz) (kerning, ligatures);
-   the glyph outlines come from ttf-parser.
-2. The outline is rasterised (tiny-skia) into a coverage bitmap, widened by half the gap and
-   packed into rows of `u64` bits.
-3. Largest first, each word walks an Archimedean spiral from a seeded start near the centre; the
-   first spot where its bits miss everything already placed wins.
-4. Optional shape: `--shape circle`, `ellipse`, or any image (`--shape star.png`): its dark
-   pixels take words, `--invert` flips that.
-   Optional `--fill` (or `[style] fill = true`): a vertical word that finds no room is set
-   horizontally, and after the layout small copies of the lighter words fill the gaps, centre
-   first, so the canvas is covered edge to edge.
-5. One global scale is found by bisection: the largest at which every word fits.
-6. Output is glyph paths, so the SVG needs no font. Same list + same seed = same picture.
-
-</details>
-
-<details>
-<summary>Weighting and options</summary>
-
-- `terms` fold into the word they belong to (`k8s`, `kubectl` -> Kubernetes): exact match,
-  your `related` lists, a built-in alias table, light stemming.
-- `--corpus file.txt` boosts words by how often your own text mentions them (stays local).
-- `--github <user>` boosts words by the languages/topics of your recent public repos - only
-  words already in the list.
-- `[semantic] backend = "embed"`: any OpenAI-compatible embeddings endpoint (sends the word list only).
-- `--explain` prints every final weight and why.
-- Flags: `--width --height --seed --shape --invert --vertical --fill --font --png --no-dark`.
-- Any shape: `wordcloud cloud.toml --shape examples/star.png --width 800 --height 800 --fill`,
-  or `[style] shape = "star.png"` (relative to the word list). With `--fill`, copies of the
-  lighter words trace the shape into its corners.
-- A wide banner for a profile README: `[style] width = 1600, height = 600, shape = "rect",
-  fill = true`, embedded with `width="100%"`. Copies never outgrow their word, the heavier
-  half of the list is never copied, and a copy keeps away from its original.
-
-</details>
-
-## As a library
-
-`default-features = false` drops the CLI and HTTP parts.
+## Library
 
 ```toml
 wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v1.1.1", default-features = false }
@@ -103,13 +109,23 @@ wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v1.1.1", def
 let source = wordcloud::Source::load("cloud.toml".as_ref())?;
 let (words, _) = wordcloud::weigh(&source, "", &wordcloud::semantic::Offline, &[]);
 let options = wordcloud::Options::from_style(&source.style);
-// A built-in name or an image file; `MaskImage::from_bytes` takes an image from memory.
-let mask = wordcloud::MaskImage::open("circle", ".".as_ref(), &options, false)?;
-let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &options, Some(&mask))?;
+// A built-in name or a picture file; `MaskImage::from_bytes` takes a picture from memory.
+let shape = wordcloud::MaskImage::open("star.png", ".".as_ref(), &options, false)?;
+let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &options, Some(&shape))?;
 std::fs::write("cloud.svg", cloud.svg(None, false))?;
 ```
 
-`cargo doc --open` has the rest; every public item is documented.
+`default-features = false` leaves out the command line and the HTTP parts. `cargo doc --open`
+has the rest.
+
+## How it works
+
+1. Each word is shaped with its real glyph outlines, kerning and ligatures included.
+2. The outline becomes a small bitmap, widened by half the gap between words.
+3. Largest first, each word spirals out from the centre and takes the first spot where its
+   bitmap touches nothing. A shape marks its outside as taken.
+4. The largest size at which every word fits is found by bisection.
+5. The picture is written as glyph paths, so the SVG needs no font.
 
 ## Development
 
@@ -123,13 +139,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 cargo deny check
 ```
 
-That is what CI runs, the second clippy and test line for the library without the CLI and
-HTTP parts. The lints are strict (clippy `pedantic` and `nursery`, no `unwrap` or
-`println!` outside tests and the CLI, docs on every public item); an `#[allow]` carries its
-reason. Same list + same seed must give the same picture, so a change that moves words is a
-breaking change and goes in the [CHANGELOG](CHANGELOG.md).
+That is what CI runs. A change that moves words for the same list and seed is a breaking
+change and goes in the [CHANGELOG](CHANGELOG.md).
 
-Releases: bump `version` in `Cargo.toml`, push the tag `vX.Y.Z`. CI checks that they match,
+Releases: bump `version` in `Cargo.toml` and push the tag `vX.Y.Z`. CI checks that they match,
 builds the binaries and moves `vX`.
 
 ## License

@@ -15,7 +15,7 @@ change that moves words for the same list and seed counts as breaking.
 
 ### Changed
 
-- `fill` copies a light word as often as a copy still fits, down to `min_size`, so a shape is
+- `fill` copies a light word up to four times (was once), down to `min_size`, so a shape is
   traced into its corners. Layouts with `fill` move; layouts without it do not.
 - `Source::lint` no longer reports an unknown shape: a name that is not built in is an image
   file, checked when the shape is opened.

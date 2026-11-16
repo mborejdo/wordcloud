@@ -714,6 +714,10 @@ pub fn generate(
     })
 }
 
+/// How often [`Options::fill`] copies one word at most: enough to trace a shape, few enough
+/// that no short word takes over.
+const MAX_COPIES: usize = 4;
+
 /// The empty grid with the mask's blocked cells set.
 fn blocked_grid(options: &Options, mask: Option<&MaskImage>) -> Grid {
     let (width, height) = options.grid_size();
@@ -795,8 +799,8 @@ impl Packer<'_> {
     }
 
     /// [`Options::fill`]: drop copies of the words into the gaps left after a pass. Only words
-    /// up to the median size are copied, never larger than the word itself, as often as a copy
-    /// still fits. Sizes run from the median down to `min_size`, lightest words first at each
+    /// up to the median size are copied, never larger than the word itself, [`MAX_COPIES`] times
+    /// at most. Sizes run from the median down to `min_size`, lightest words first at each
     /// size; spots are tried from the centre outwards. Returns the bits the copies took.
     fn fill_gaps(&self, grid: &mut Grid, placed: &mut Vec<Placed>, scale: f32) -> Option<u32> {
         let mut relative: Vec<f32> = self.prepared.iter().map(|p| p.relative).collect();
@@ -810,6 +814,7 @@ impl Packer<'_> {
         for word in placed.iter() {
             last[word.shape] = Some((word.transformation.ox, word.transformation.oy));
         }
+        let mut copies = vec![0; self.prepared.len()];
         let mut bits = 0;
         loop {
             if size < floor {
@@ -822,7 +827,10 @@ impl Packer<'_> {
                 set = false;
                 for (shape_index, prepared) in self.prepared.iter().enumerate().rev() {
                     // A copy never outgrows its word, and the heavy words are not copied at all.
-                    if prepared.relative > median || size > scale * prepared.relative {
+                    if copies[shape_index] == MAX_COPIES
+                        || prepared.relative > median
+                        || size > scale * prepared.relative
+                    {
                         continue;
                     }
                     // Alternate the turn by word, so the copies fill tall gaps as well as wide
@@ -835,6 +843,7 @@ impl Packer<'_> {
                             last[shape_index] =
                                 Some((copy.transformation.ox, copy.transformation.oy));
                             placed.push(copy);
+                            copies[shape_index] += 1;
                             bits += sprite.ink();
                             set = true;
                             break;
@@ -1180,8 +1189,11 @@ mod tests {
         assert_eq!(a.grid.count(), a.sprite_bits);
         let copies: Vec<_> = a.placed.iter().filter(|p| p.copy).collect();
         assert!(!copies.is_empty());
-        // A light word is copied as often as it fits, the heaviest word never.
-        assert!(copies.len() > words().len());
+        // A light word is copied up to `MAX_COPIES` times, the heaviest word never.
+        let most = (0..a.placed.len())
+            .map(|shape| copies.iter().filter(|p| p.shape == shape).count())
+            .max();
+        assert_eq!(most, Some(MAX_COPIES));
         assert!(copies.iter().all(|p| p.word.text != "Kalsarikännit"));
         // Originals come first, then the copies.
         assert!(
