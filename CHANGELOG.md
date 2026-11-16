@@ -3,6 +3,18 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## Unreleased
+
+### Fixed
+
+- `--no-default-features --features cli` no longer fails to compile: the binary needs `http`
+  too and is skipped without it. The library builds as before.
+
+### Changed
+
+- Internal clean-up of the layout code; CI lints and tests the build without default features.
+  No change to any layout or to the public API.
+
 ## 1.1.1 - 2026-11-04
 
 ### Changed
