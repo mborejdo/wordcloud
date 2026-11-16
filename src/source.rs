@@ -12,6 +12,9 @@ use crate::color::Rgb;
 use crate::layout::Shape;
 use crate::semantic::Backend;
 
+/// The colour name of a word that names none.
+const DEFAULT_COLOR: &str = "ink";
+
 /// A parsed word list.
 ///
 /// # Examples
@@ -145,7 +148,7 @@ impl Source {
     /// `[colors]` is returned as is, so a literal `#rrggbb` works too.
     #[must_use]
     pub fn color(&self, name: Option<&str>) -> String {
-        let name = name.unwrap_or("ink");
+        let name = name.unwrap_or(DEFAULT_COLOR);
         self.colors
             .get(name)
             .cloned()
@@ -155,7 +158,7 @@ impl Source {
     /// Resolve a colour name for the dark variant, falling back to the light colour.
     #[must_use]
     pub fn color_dark(&self, name: Option<&str>) -> String {
-        let key = name.unwrap_or("ink");
+        let key = name.unwrap_or(DEFAULT_COLOR);
         self.colors_dark
             .get(key)
             .cloned()
