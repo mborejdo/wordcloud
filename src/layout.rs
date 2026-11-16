@@ -54,6 +54,14 @@ impl Options {
             fill: style.fill.unwrap_or(false),
         }
     }
+
+    /// The layout grid in cells: the canvas times `res`.
+    const fn grid_size(&self) -> (usize, usize) {
+        (
+            (self.width * self.res) as usize,
+            (self.height * self.res) as usize,
+        )
+    }
 }
 
 impl Default for Options {
@@ -135,12 +143,16 @@ impl fmt::Debug for MaskImage {
 impl MaskImage {
     /// Load a mask image: dark, opaque pixels are where words may go; `invert` flips that.
     pub fn load(path: &Path, options: &Options, invert: bool) -> Result<Self> {
-        let (width, height) = (options.width * options.res, options.height * options.res);
+        let (width, height) = options.grid_size();
         let image = image::open(path)
             .with_context(|| format!("read mask {}", path.display()))?
             .to_luma_alpha8();
-        let image =
-            image::imageops::resize(&image, width, height, image::imageops::FilterType::Triangle);
+        let image = image::imageops::resize(
+            &image,
+            width as u32,
+            height as u32,
+            image::imageops::FilterType::Triangle,
+        );
         let blocked = image
             .pixels()
             .map(|p| (p.0[0] < 128 && p.0[1] >= 128) == invert)
@@ -159,10 +171,7 @@ impl MaskImage {
     /// ```
     #[must_use]
     pub fn from_shape(shape: Shape, options: &Options) -> Self {
-        let (width, height) = (
-            (options.width * options.res) as usize,
-            (options.height * options.res) as usize,
-        );
+        let (width, height) = options.grid_size();
         let (rx, ry) = (width as f32 / 2.0, height as f32 / 2.0);
         let blocked = match shape {
             Shape::Rect => vec![false; width * height],
@@ -440,6 +449,11 @@ impl Sprite {
         ))
     }
 
+    /// The number of pixels the sprite covers.
+    fn ink(&self) -> u32 {
+        self.bits.iter().map(|b| b.count_ones()).sum()
+    }
+
     fn with_cells(
         width: usize,
         height: usize,
@@ -563,6 +577,17 @@ pub struct Placed {
     transformation: Transformation,
 }
 
+impl Placed {
+    /// The fill colour for the light or the dark variant.
+    fn fill(&self, dark: bool) -> &str {
+        if dark {
+            &self.word.color_dark
+        } else {
+            &self.word.color
+        }
+    }
+}
+
 /// A finished layout. Write it with [`Cloud::svg`] or [`Cloud::png`].
 #[derive(Debug)]
 pub struct Cloud {
@@ -669,10 +694,7 @@ pub fn generate(
 
 /// The empty grid with the mask's blocked cells set.
 fn blocked_grid(options: &Options, mask: Option<&MaskImage>) -> Grid {
-    let (width, height) = (
-        (options.width * options.res) as usize,
-        (options.height * options.res) as usize,
-    );
+    let (width, height) = options.grid_size();
     let mut grid = Grid::new(width, height);
     if let Some(mask) = mask {
         for (i, &blocked) in mask.blocked.iter().enumerate() {
@@ -688,11 +710,7 @@ fn blocked_grid(options: &Options, mask: Option<&MaskImage>) -> Grid {
 fn prepare(words: &[Word], face: &rustybuzz::Face<'_>, options: &Options) -> Result<Vec<Prepared>> {
     let mut rng = Rng(options.seed);
     let max_weight = words.iter().map(|w| w.weight).fold(f32::MIN, f32::max);
-    let mut order: Vec<(usize, u64)> = words
-        .iter()
-        .enumerate()
-        .map(|(i, _)| (i, rng.next()))
-        .collect();
+    let mut order: Vec<(usize, u64)> = (0..words.len()).map(|i| (i, rng.next())).collect();
     order.sort_by(|a, b| {
         words[b.0]
             .weight
@@ -723,12 +741,42 @@ fn prepare(words: &[Word], face: &rustybuzz::Face<'_>, options: &Options) -> Res
 }
 
 impl Packer<'_> {
+    /// The sprite of `prepared` at `size` canvas px. Each sprite carries half the gap, so two
+    /// neighbours sit `gap` apart. Big words get more air: plus 8% of their size.
+    fn sprite(&self, prepared: &Prepared, size: f32, rotated: bool) -> Option<Sprite> {
+        let resolution = self.options.res as f32;
+        let gap = ((self.options.gap + 0.08 * size) * resolution / 2.0).round() as usize;
+        Sprite::new(&prepared.shaped, size * resolution, self.upem, rotated, gap)
+    }
+
+    /// Mark `sprite` on the grid at (x, y) and return the word placed there.
+    fn settle(
+        &self,
+        grid: &mut Grid,
+        sprite: &Sprite,
+        (x, y): (usize, usize),
+        shape: usize,
+        copy: bool,
+    ) -> Placed {
+        grid.place(sprite, x, y);
+        Placed {
+            word: self.words[self.prepared[shape].index].clone(),
+            copy,
+            shape,
+            transformation: Transformation {
+                ox: x as f32,
+                oy: y as f32,
+                div: self.options.res as f32,
+                ..sprite.transformation
+            },
+        }
+    }
+
     /// [`Options::fill`]: drop copies of the words into the gaps left after a pass. Only words
     /// up to the median size are copied, at most once and never larger than the word itself.
     /// Sizes run from the median down to 1.5x `min_size`, lightest words first at each size;
     /// spots are tried from the centre outwards. Returns the bits the copies took.
     fn fill_gaps(&self, grid: &mut Grid, placed: &mut Vec<Placed>, scale: f32) -> Option<u32> {
-        let resolution = self.options.res as f32;
         let mut relative: Vec<f32> = self.prepared.iter().map(|p| p.relative).collect();
         relative.sort_by(f32::total_cmp);
         let floor = 1.5 * self.options.min_size;
@@ -746,7 +794,6 @@ impl Packer<'_> {
             if size < floor {
                 break;
             }
-            let gap = ((self.options.gap + 0.08 * size) * resolution / 2.0).round() as usize;
             for (shape_index, prepared) in self.prepared.iter().enumerate().rev() {
                 // A copy never outgrows its word, and the heavy words are not copied at all.
                 if copied[shape_index]
@@ -758,22 +805,10 @@ impl Packer<'_> {
                 // Alternate the turn by word, so the copies fill tall gaps as well as wide ones.
                 let first = shape_index % 3 == 1;
                 for rotated in [first, !first] {
-                    let sprite =
-                        Sprite::new(&prepared.shaped, size * resolution, self.upem, rotated, gap)?;
-                    if let Some((x, y)) = spots.find(grid, &sprite, original[shape_index]) {
-                        grid.place(&sprite, x, y);
-                        bits += sprite.bits.iter().map(|b| b.count_ones()).sum::<u32>();
-                        placed.push(Placed {
-                            word: self.words[prepared.index].clone(),
-                            copy: true,
-                            shape: shape_index,
-                            transformation: Transformation {
-                                ox: x as f32,
-                                oy: y as f32,
-                                div: resolution,
-                                ..sprite.transformation
-                            },
-                        });
+                    let sprite = self.sprite(prepared, size, rotated)?;
+                    if let Some(at) = spots.find(grid, &sprite, original[shape_index]) {
+                        placed.push(self.settle(grid, &sprite, at, shape_index, true));
+                        bits += sprite.ink();
                         copied[shape_index] = true;
                         break;
                     }
@@ -794,9 +829,6 @@ impl Packer<'_> {
             let mut size = (scale * prepared.relative).max(self.options.min_size);
             let mut fits = false;
             for _ in 0..if strict { 1 } else { 8 } {
-                // Each sprite carries half the gap, so two neighbours sit `gap` apart. Big words
-                // get more air: plus 8% of their size.
-                let gap = ((self.options.gap + 0.08 * size) * resolution / 2.0).round() as usize;
                 // With `fill`, a vertical word that finds no spot is tried horizontally too.
                 let turns: &[bool] = if self.options.fill && prepared.rotated {
                     &[true, false]
@@ -805,28 +837,15 @@ impl Packer<'_> {
                 };
                 let mut spot = None;
                 for &rotated in turns {
-                    let sprite =
-                        Sprite::new(&prepared.shaped, size * resolution, self.upem, rotated, gap)?;
+                    let sprite = self.sprite(prepared, size, rotated)?;
                     if let Some(at) = find(&grid, &sprite, prepared, resolution) {
                         spot = Some((sprite, at));
                         break;
                     }
                 }
-                if let Some((sprite, (x, y))) = spot {
-                    grid.place(&sprite, x, y);
-                    sprite_bits += sprite.bits.iter().map(|b| b.count_ones()).sum::<u32>();
-                    let transformation = Transformation {
-                        ox: x as f32,
-                        oy: y as f32,
-                        div: resolution,
-                        ..sprite.transformation
-                    };
-                    placed.push(Placed {
-                        word: self.words[prepared.index].clone(),
-                        copy: false,
-                        shape: shape_index,
-                        transformation,
-                    });
+                if let Some((sprite, at)) = spot {
+                    placed.push(self.settle(&mut grid, &sprite, at, shape_index, false));
+                    sprite_bits += sprite.ink();
                     fits = true;
                     break;
                 }
@@ -970,11 +989,7 @@ impl Cloud {
         }
         for placed in &self.placed {
             let data = svg_path(&self.shapes[placed.shape].segments, &placed.transformation);
-            let fill = if dark {
-                &placed.word.color_dark
-            } else {
-                &placed.word.color
-            };
+            let fill = placed.fill(dark);
             let _ = writeln!(
                 svg,
                 "<path fill=\"{fill}\" d=\"{data}\"><title>{}</title></path>",
@@ -1001,12 +1016,7 @@ impl Cloud {
             ));
         }
         for placed in &self.placed {
-            let fill = if dark {
-                &placed.word.color_dark
-            } else {
-                &placed.word.color
-            };
-            let rgb: Rgb = fill.parse()?;
+            let rgb: Rgb = placed.fill(dark).parse()?;
             let mut paint = Paint::default();
             paint.set_color_rgba8(rgb.red, rgb.green, rgb.blue, 255);
             paint.anti_alias = true;
