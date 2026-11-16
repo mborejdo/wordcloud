@@ -260,7 +260,8 @@ pub struct Offline;
 
 impl Scorer for Offline {
     fn assign(&self, heads: &[Word], term: &str) -> Option<Match> {
-        let (key, stemmed) = (norm(term), stem(&norm(term)));
+        let key = norm(term);
+        let stemmed = stem(&key);
         let hit = |why: &str, head: usize| {
             Some(Match {
                 head,
