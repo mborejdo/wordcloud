@@ -3,6 +3,13 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## 2.0.1 - 2026-11-16
+
+### Fixed
+
+- The release builds the macOS binary on macOS 15: GitHub retired the macOS 14 runner, so
+  2.0.0 has no binaries. No change to the crate.
+
 ## 2.0.0 - 2026-11-16
 
 ### Added

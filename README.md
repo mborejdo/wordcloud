@@ -102,7 +102,7 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
 ## Library
 
 ```toml
-wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v2.0.0", default-features = false }
+wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v2.0.1", default-features = false }
 ```
 
 ```rust
