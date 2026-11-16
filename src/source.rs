@@ -9,7 +9,6 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::color::Rgb;
-use crate::layout::Shape;
 use crate::semantic::Backend;
 
 /// The colour name of a word that names none.
@@ -79,8 +78,11 @@ pub struct Style {
     pub gap: Option<f32>,
     /// Size contrast: `size = scale * (weight / max) ^ contrast`.
     pub contrast: Option<f32>,
-    /// Built-in shape: `rect`, `ellipse` or `circle`, see [`Shape`].
+    /// The shape the words fill: `rect`, `ellipse`, `circle` (see [`crate::Shape`]) or an image file,
+    /// relative to the word list, whose dark pixels take words.
     pub shape: Option<String>,
+    /// Flip a shape image: its light or transparent pixels take words.
+    pub invert: Option<bool>,
     /// Fill the canvas edge to edge, see [`crate::Options::fill`].
     pub fill: Option<bool>,
 }
@@ -197,8 +199,8 @@ impl Source {
     }
 
     /// Find mistakes in the word list: empty and duplicate (case-insensitive) words, colours
-    /// that do not resolve to `#rrggbb`, an unknown shape or semantic backend. One line per
-    /// finding; empty when the list is clean.
+    /// that do not resolve to `#rrggbb`, an unknown semantic backend. One line per finding;
+    /// empty when the list is clean. A shape is checked when it is opened.
     #[must_use]
     pub fn lint(&self) -> Vec<String> {
         let mut seen = BTreeMap::new();
@@ -224,11 +226,6 @@ impl Source {
                     "colour `{colour}` (first used by `{word}`) is not in [colors] and not #rrggbb"
                 ));
             }
-        }
-        if let Some(shape) = &self.style.shape
-            && let Err(e) = shape.parse::<Shape>()
-        {
-            findings.push(format!("[style] {e:#}"));
         }
         if let Err(e) = self.semantic.backend.parse::<Backend>() {
             findings.push(format!("[semantic] {e:#}"));
@@ -303,10 +300,8 @@ mod tests {
     }
 
     #[test]
-    fn lint_unknown_shape_and_backend_reported() {
+    fn lint_unknown_backend_reported() {
         let source: Source = r#"
-            [style]
-            shape = "heart"
             [semantic]
             backend = "magic"
         "#
@@ -314,10 +309,7 @@ mod tests {
         .expect("parse");
         assert_eq!(
             source.lint(),
-            vec![
-                "[style] unknown shape `heart` (rect | ellipse | circle)",
-                "[semantic] unknown semantic backend `magic` (offline | embed)",
-            ]
+            vec!["[semantic] unknown semantic backend `magic` (offline | embed)",]
         );
     }
 }

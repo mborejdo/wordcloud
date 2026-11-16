@@ -32,9 +32,9 @@ pub struct Options {
     pub res: u32,
     /// Smallest font size in canvas px.
     pub min_size: f32,
-    /// Fill the canvas edge to edge: a vertical word that does not fit is set horizontally
-    /// instead, and small copies of the words fill the gaps that are left. Off by default, so
-    /// existing layouts do not move.
+    /// Fill the canvas, or the shape, edge to edge: a vertical word that does not fit is set
+    /// horizontally instead, and small copies of the words fill every gap that is left. Off by
+    /// default.
     pub fill: bool,
 }
 
@@ -70,6 +70,9 @@ impl Default for Options {
     }
 }
 
+/// The built-in shape names, as an error message lists them.
+const SHAPES: &str = "rect | ellipse | circle";
+
 /// A built-in canvas shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Shape {
@@ -102,7 +105,7 @@ impl FromStr for Shape {
             "rect" => Ok(Self::Rect),
             "ellipse" => Ok(Self::Ellipse),
             "circle" => Ok(Self::Circle),
-            other => bail!("unknown shape `{other}` (rect | ellipse | circle)"),
+            other => bail!("unknown shape `{other}` ({SHAPES})"),
         }
     }
 }
@@ -141,12 +144,31 @@ impl fmt::Debug for MaskImage {
 }
 
 impl MaskImage {
-    /// Load a mask image: dark, opaque pixels are where words may go; `invert` flips that.
+    /// Open a shape by the name a word list or a command line gives it: a built-in one
+    /// (`rect`, `ellipse`, `circle`) or an image file, relative to `base`. `invert` flips an
+    /// image, see [`MaskImage::from_bytes`].
+    pub fn open(shape: &str, base: &Path, options: &Options, invert: bool) -> Result<Self> {
+        shape.parse().map_or_else(
+            |_| {
+                Self::load(&base.join(shape), options, invert)
+                    .with_context(|| format!("unknown shape `{shape}` ({SHAPES} | image file)"))
+            },
+            |shape| Ok(Self::from_shape(shape, options)),
+        )
+    }
+
+    /// Read a shape image from a file, see [`MaskImage::from_bytes`].
     pub fn load(path: &Path, options: &Options, invert: bool) -> Result<Self> {
+        let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+        Self::from_bytes(&bytes, options, invert)
+            .with_context(|| format!("decode {}", path.display()))
+    }
+
+    /// Build the mask from an encoded image (PNG or JPEG), stretched to the canvas: dark,
+    /// opaque pixels are where words may go; `invert` flips that.
+    pub fn from_bytes(bytes: &[u8], options: &Options, invert: bool) -> Result<Self> {
         let (width, height) = options.grid_size();
-        let image = image::open(path)
-            .with_context(|| format!("read mask {}", path.display()))?
-            .to_luma_alpha8();
+        let image = image::load_from_memory(bytes)?.to_luma_alpha8();
         let image = image::imageops::resize(
             &image,
             width as u32,
@@ -773,44 +795,50 @@ impl Packer<'_> {
     }
 
     /// [`Options::fill`]: drop copies of the words into the gaps left after a pass. Only words
-    /// up to the median size are copied, at most once and never larger than the word itself.
-    /// Sizes run from the median down to 1.5x `min_size`, lightest words first at each size;
-    /// spots are tried from the centre outwards. Returns the bits the copies took.
+    /// up to the median size are copied, never larger than the word itself, as often as a copy
+    /// still fits. Sizes run from the median down to `min_size`, lightest words first at each
+    /// size; spots are tried from the centre outwards. Returns the bits the copies took.
     fn fill_gaps(&self, grid: &mut Grid, placed: &mut Vec<Placed>, scale: f32) -> Option<u32> {
         let mut relative: Vec<f32> = self.prepared.iter().map(|p| p.relative).collect();
         relative.sort_by(f32::total_cmp);
-        let floor = 1.5 * self.options.min_size;
+        let floor = self.options.min_size;
         let median = *relative.get(relative.len() / 2)?;
         let mut size = (scale * median).max(floor);
         let spots = Spots::new(grid);
-        // Where each word already is (top left, grid px): a copy keeps away from it.
-        let mut original = vec![None; self.prepared.len()];
+        // Where each word was set last (top left, grid px): its next copy keeps away from there.
+        let mut last = vec![None; self.prepared.len()];
         for word in placed.iter() {
-            original[word.shape] = Some((word.transformation.ox, word.transformation.oy));
+            last[word.shape] = Some((word.transformation.ox, word.transformation.oy));
         }
-        let mut copied = vec![false; self.prepared.len()];
         let mut bits = 0;
         loop {
             if size < floor {
                 break;
             }
-            for (shape_index, prepared) in self.prepared.iter().enumerate().rev() {
-                // A copy never outgrows its word, and the heavy words are not copied at all.
-                if copied[shape_index]
-                    || prepared.relative > median
-                    || size > scale * prepared.relative
-                {
-                    continue;
-                }
-                // Alternate the turn by word, so the copies fill tall gaps as well as wide ones.
-                let first = shape_index % 3 == 1;
-                for rotated in [first, !first] {
-                    let sprite = self.sprite(prepared, size, rotated)?;
-                    if let Some(at) = spots.find(grid, &sprite, original[shape_index]) {
-                        placed.push(self.settle(grid, &sprite, at, shape_index, true));
-                        bits += sprite.ink();
-                        copied[shape_index] = true;
-                        break;
+            // Sweep the words until a whole sweep sets nothing: one copy per word and sweep, so
+            // the copies of a word spread out.
+            let mut set = true;
+            while set {
+                set = false;
+                for (shape_index, prepared) in self.prepared.iter().enumerate().rev() {
+                    // A copy never outgrows its word, and the heavy words are not copied at all.
+                    if prepared.relative > median || size > scale * prepared.relative {
+                        continue;
+                    }
+                    // Alternate the turn by word, so the copies fill tall gaps as well as wide
+                    // ones.
+                    let first = shape_index % 3 == 1;
+                    for rotated in [first, !first] {
+                        let sprite = self.sprite(prepared, size, rotated)?;
+                        if let Some(at) = spots.find(grid, &sprite, last[shape_index]) {
+                            let copy = self.settle(grid, &sprite, at, shape_index, true);
+                            last[shape_index] =
+                                Some((copy.transformation.ox, copy.transformation.oy));
+                            placed.push(copy);
+                            bits += sprite.ink();
+                            set = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -1152,8 +1180,8 @@ mod tests {
         assert_eq!(a.grid.count(), a.sprite_bits);
         let copies: Vec<_> = a.placed.iter().filter(|p| p.copy).collect();
         assert!(!copies.is_empty());
-        // One copy per word at most, and never of the heaviest word.
-        assert!(copies.len() <= words().len());
+        // A light word is copied as often as it fits, the heaviest word never.
+        assert!(copies.len() > words().len());
         assert!(copies.iter().all(|p| p.word.text != "Kalsarikännit"));
         // Originals come first, then the copies.
         assert!(
@@ -1174,6 +1202,60 @@ mod tests {
         let spots = Spots::new(&Grid::new(40, 20));
         assert_eq!(spots.0.first(), Some(&(20, 10)));
         assert_eq!(spots.0.last(), Some(&(0, 0)));
+    }
+
+    /// A PNG of the grid's size whose left half is black.
+    fn left_half(options: &Options) -> Vec<u8> {
+        let (width, height) = options.grid_size();
+        let image = image::GrayImage::from_fn(width as u32, height as u32, |x, _| {
+            image::Luma([if (x as usize) < width / 2 { 0 } else { 255 }])
+        });
+        let mut png = std::io::Cursor::new(Vec::new());
+        image
+            .write_to(&mut png, image::ImageFormat::Png)
+            .expect("encode");
+        png.into_inner()
+    }
+
+    #[test]
+    fn from_bytes_frees_the_dark_pixels_and_invert_the_light_ones() {
+        let options = options(7);
+        let (width, _) = options.grid_size();
+        let png = left_half(&options);
+        for invert in [false, true] {
+            let mask = MaskImage::from_bytes(&png, &options, invert).expect("mask");
+            assert_eq!(mask.blocked[0], invert);
+            assert_eq!(mask.blocked[width - 1], !invert);
+        }
+    }
+
+    #[test]
+    fn generate_with_fill_in_a_shape_image_sets_no_word_outside_it() {
+        let options = Options {
+            fill: true,
+            ..options(7)
+        };
+        let mask = MaskImage::from_bytes(&left_half(&options), &options, false).expect("mask");
+        let cloud = generate(&words(), crate::DEFAULT_FONT, &options, Some(&mask)).expect("cloud");
+        assert_eq!(
+            cloud.grid.count(),
+            cloud.sprite_bits + mask.blocked.len() as u32 / 2
+        );
+        let half = (options.width * options.res / 2) as f32;
+        assert!(cloud.placed.iter().all(|p| p.transformation.ox < half));
+    }
+
+    #[test]
+    fn open_takes_a_built_in_name_or_an_image_file_and_names_the_shape_otherwise() {
+        let options = options(7);
+        let dir = std::env::temp_dir();
+        assert!(MaskImage::open("circle", &dir, &options, false).is_ok());
+        let error = MaskImage::open("heart", &dir, &options, false).expect_err("no such shape");
+        assert!(
+            format!("{error:#}")
+                .starts_with("unknown shape `heart` (rect | ellipse | circle | image file): read "),
+            "{error:#}"
+        );
     }
 
     #[test]

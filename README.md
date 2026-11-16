@@ -61,7 +61,8 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
    packed into rows of `u64` bits.
 3. Largest first, each word walks an Archimedean spiral from a seeded start near the centre; the
    first spot where its bits miss everything already placed wins.
-4. Optional shape: `--shape circle|ellipse` or a `--mask` image (dark pixels take words).
+4. Optional shape: `--shape circle`, `ellipse`, or any image (`--shape star.png`): its dark
+   pixels take words, `--invert` flips that.
    Optional `--fill` (or `[style] fill = true`): a vertical word that finds no room is set
    horizontally, and after the layout small copies of the lighter words fill the gaps, centre
    first, so the canvas is covered edge to edge.
@@ -80,7 +81,10 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
   words already in the list.
 - `[semantic] backend = "embed"`: any OpenAI-compatible embeddings endpoint (sends the word list only).
 - `--explain` prints every final weight and why.
-- Flags: `--width --height --seed --shape --vertical --fill --font --mask --png --no-dark`.
+- Flags: `--width --height --seed --shape --invert --vertical --fill --font --png --no-dark`.
+- Any shape: `wordcloud cloud.toml --shape examples/star.png --width 800 --height 800 --fill`,
+  or `[style] shape = "star.png"` (relative to the word list). With `--fill`, copies of the
+  lighter words trace the shape into its corners.
 - A wide banner for a profile README: `[style] width = 1600, height = 600, shape = "rect",
   fill = true`, embedded with `width="100%"`. Copies never outgrow their word, the heavier
   half of the list is never copied, and a copy keeps away from its original.
@@ -99,7 +103,8 @@ wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v1.1.1", def
 let source = wordcloud::Source::load("cloud.toml".as_ref())?;
 let (words, _) = wordcloud::weigh(&source, "", &wordcloud::semantic::Offline, &[]);
 let options = wordcloud::Options::from_style(&source.style);
-let mask = wordcloud::MaskImage::shape("circle", &options)?;
+// A built-in name or an image file; `MaskImage::from_bytes` takes an image from memory.
+let mask = wordcloud::MaskImage::open("circle", ".".as_ref(), &options, false)?;
 let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &options, Some(&mask))?;
 std::fs::write("cloud.svg", cloud.svg(None, false))?;
 ```

@@ -7,7 +7,8 @@
 //! 3. Words go in largest first. Each one walks an Archimedean spiral (stretched to the canvas
 //!    aspect) from a seeded start near the centre; the first position where its bit sprite does
 //!    not intersect the occupancy bitmask wins. The test is a shifted AND over 64 px at a time.
-//! 4. An optional mask image or [`Shape`] pre-fills the occupancy: blocked pixels take no words.
+//! 4. An optional shape, a [`Shape`] or any image ([`MaskImage::open`]), pre-fills the
+//!    occupancy: blocked pixels take no words.
 //! 5. One global scale is found by bisection: the largest scale at which every word fits at its
 //!    nominal size. The result is written as SVG glyph paths (crisp anywhere, no font needed),
 //!    optionally also as PNG.

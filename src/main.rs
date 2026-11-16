@@ -3,7 +3,7 @@
 //! ```sh
 //! wordcloud cloud.toml --out cloud.svg --png
 //! wordcloud cloud.toml --shape circle --width 1000 --height 1000 --github octocat
-//! wordcloud cloud.toml --shape rect --width 1600 --height 600 --fill
+//! wordcloud cloud.toml --shape star.png --width 800 --height 800 --fill
 //! wordcloud cloud.toml --explain
 //! ```
 
@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::Parser;
 use wordcloud::semantic::{Embed, Offline, Scorer};
-use wordcloud::{Backend, Cloud, Explained, MaskImage, Options, Shape, Source};
+use wordcloud::{Backend, Cloud, Explained, MaskImage, Options, Source};
 
 /// The command line.
 #[derive(Debug, Parser)]
@@ -30,58 +30,50 @@ use wordcloud::{Backend, Cloud, Explained, MaskImage, Options, Shape, Source};
     about = "Word clouds from real glyph outlines - deterministic, transparent SVG/PNG"
 )]
 struct Cli {
-    #[arg(
-        default_value = "cloud.toml",
-        help = "Word list (TOML: [style], [colors], [colors_dark], [semantic], [[tier]], [[word]], terms)"
-    )]
+    /// Word list, a TOML file.
+    #[arg(default_value = "cloud.toml")]
     wordlist: PathBuf,
-    /// SVG output. `<stem>-dark.svg` and, with --png, `<stem>.png` / `<stem>-dark.png` go next to it.
+    /// SVG to write; the dark variant and the PNGs go next to it.
     #[arg(long, default_value = "cloud.svg")]
     out: PathBuf,
-    /// Also write PNGs (with alpha) at this many px per canvas px.
-    #[arg(long, num_args = 0..=1, default_missing_value = "2")]
+    /// Also write PNGs, at this many px per canvas px.
+    #[arg(long, value_name = "SCALE", num_args = 0..=1, default_missing_value = "2")]
     png: Option<f32>,
     /// Skip the dark variant.
     #[arg(long)]
     no_dark: bool,
-    /// Canvas width in px (default: [style] width, else 800).
+    /// Canvas width in px [default: [style] width, else 800].
     #[arg(long)]
     width: Option<u32>,
-    /// Canvas height in px (default: [style] height, else 418).
+    /// Canvas height in px [default: [style] height, else 418].
     #[arg(long)]
     height: Option<u32>,
-    /// Layout seed (default: [style] seed). Same list + same seed = same picture.
+    /// Layout seed: same list and seed, same picture [default: [style] seed].
     #[arg(long)]
     seed: Option<u64>,
-    /// TTF/OTF (default: [style] font, relative to the word list; else the bundled Bricolage Grotesque).
-    #[arg(long)]
+    /// TTF or OTF file [default: [style] font, else the bundled Bricolage Grotesque].
+    #[arg(long, value_name = "FILE")]
     font: Option<PathBuf>,
-    /// Shape image: dark, opaque pixels take words.
-    #[arg(long, conflicts_with = "shape")]
-    mask: Option<PathBuf>,
-    /// Flip the mask: light or transparent pixels take words.
-    #[arg(long)]
-    mask_invert: bool,
-    /// Built-in shape (default: [style] shape, else rect). circle = ellipse; use a square canvas.
-    #[arg(long, value_enum)]
-    shape: Option<Shape>,
-    /// Share of vertical words, 0..1.
+    /// Shape the words fill: rect, ellipse, circle, or an image whose dark pixels take words
+    /// [default: [style] shape, else rect].
+    #[arg(long, alias = "mask", value_name = "NAME|IMAGE")]
+    shape: Option<String>,
+    /// Flip a shape image: its light pixels take words [default: [style] invert].
+    #[arg(long, alias = "mask-invert")]
+    invert: bool,
+    /// Share of vertical words, 0 to 1 [default: [style] vertical].
     #[arg(long)]
     vertical: Option<f32>,
-    /// Fill the canvas edge to edge: small copies of the lighter words go into the gaps
-    /// (default: [style] fill, else off).
+    /// Fill every gap with small copies of the lighter words [default: [style] fill].
     #[arg(long)]
     fill: bool,
-    #[arg(
-        long,
-        value_name = "USER",
-        help = "Boost words by a GitHub user's recent public languages/topics ($GITHUB_TOKEN optional)"
-    )]
+    /// Boost words by a GitHub user's recent public languages and topics.
+    #[arg(long, value_name = "USER")]
     github: Option<String>,
-    /// Text file whose mentions boost words (e.g. a CV as plain text). Stays local.
-    #[arg(long)]
+    /// Boost words by their mentions in a text file; it stays local.
+    #[arg(long, value_name = "FILE")]
     corpus: Option<PathBuf>,
-    /// Semantic backend (default: [semantic] backend). embed sends the word list only.
+    /// Semantic backend; embed sends the word list only [default: [semantic] backend].
     #[arg(long, value_enum)]
     scorer: Option<Backend>,
     /// Print the final weights and why, then stop.
@@ -92,13 +84,12 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let source = Source::load(&cli.wordlist)?;
-    let corpus = cli
-        .corpus
-        .as_ref()
-        .map(std::fs::read_to_string)
-        .transpose()
-        .context("read --corpus")?
-        .unwrap_or_default();
+    let corpus = match &cli.corpus {
+        Some(path) => {
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?
+        },
+        None => String::new(),
+    };
     let backend = match cli.scorer {
         Some(backend) => backend,
         None => source.semantic.backend.parse()?,
@@ -146,14 +137,12 @@ fn main() -> Result<()> {
         Some(path) => std::fs::read(&path).with_context(|| format!("read {}", path.display()))?,
         None => wordcloud::DEFAULT_FONT.to_vec(),
     };
-    let shape = match cli.shape {
-        Some(shape) => Some(shape),
-        None => source.style.shape.as_deref().map(str::parse).transpose()?,
-    };
-    let mask = match (&cli.mask, shape) {
-        (Some(path), _) => Some(MaskImage::load(path, &options, cli.mask_invert)?),
-        (None, Some(shape)) if shape != Shape::Rect => Some(MaskImage::from_shape(shape, &options)),
-        _ => None,
+    // A shape from the command line is relative to where it runs, one from the list to the list.
+    let invert = cli.invert || source.style.invert.unwrap_or(false);
+    let mask = match (&cli.shape, &source.style.shape) {
+        (Some(shape), _) => Some(MaskImage::open(shape, Path::new(""), &options, invert)?),
+        (None, Some(shape)) => Some(MaskImage::open(shape, base, &options, invert)?),
+        (None, None) => None,
     };
 
     let started = std::time::Instant::now();

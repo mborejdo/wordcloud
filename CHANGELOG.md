@@ -5,17 +5,29 @@ change that moves words for the same list and seed counts as breaking.
 
 ## Unreleased
 
+### Added
+
+- Any image as the shape: `--shape star.png` and `[style] shape = "star.png"` (relative to the
+  word list) beside the built-in names, `--invert` and `[style] invert`. `--mask` and
+  `--mask-invert` stay as aliases.
+- `MaskImage::open` (a built-in name or an image file) and `MaskImage::from_bytes` (an image
+  from memory).
+
+### Changed
+
+- `fill` copies a light word as often as a copy still fits, down to `min_size`, so a shape is
+  traced into its corners. Layouts with `fill` move; layouts without it do not.
+- `Source::lint` no longer reports an unknown shape: a name that is not built in is an image
+  file, checked when the shape is opened.
+- One wording for the command line's help and errors (`read <file>`, `unknown shape ...`).
+- Internal clean-up of the layout code; CI lints and tests the build without default features.
+
 ### Fixed
 
 - `--no-default-features --features cli` no longer fails to compile: the binary needs `http`
   too and is skipped without it. The library builds as before.
 - `Cloud::svg` escapes the background and the fill colours in their attributes: a colour
   holding a quote no longer breaks the SVG. A `#rrggbb` colour is written as before.
-
-### Changed
-
-- Internal clean-up of the layout code; CI lints and tests the build without default features.
-  No change to any layout or to the public API.
 
 ## 1.1.1 - 2026-11-04
 
