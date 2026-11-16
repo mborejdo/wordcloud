@@ -1,4 +1,4 @@
-# cargo-deny: advisories, licences, bans, sources. Run: make deny
+# cargo-deny: advisories, licences, bans, sources. Run: cargo deny check
 [advisories]
 yanked = "deny"
 # The shaping stack. Both crates are declared unmaintained upstream; wordcloud only reads the

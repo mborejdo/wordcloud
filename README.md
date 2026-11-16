@@ -92,7 +92,7 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
 `default-features = false` drops the CLI and HTTP parts.
 
 ```toml
-wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v1.0.0", default-features = false }
+wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v1.1.1", default-features = false }
 ```
 
 ```rust

@@ -16,7 +16,7 @@ include = ["src/**", "fonts/**", "README.md", "CHANGELOG.md", "LICENSE-*", "Carg
 
 [features]
 default = ["cli", "http"]
-# The `wordcloud` binary.
+# The `wordcloud` binary (it needs `http` too).
 cli = ["dep:clap"]
 # GitHub activity boost and the embeddings backend over HTTP.
 http = ["dep:ureq"]

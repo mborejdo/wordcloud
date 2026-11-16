@@ -36,7 +36,7 @@
 //!
 //! # Features
 //!
-//! - `cli` (default): the `wordcloud` binary.
+//! - `cli` (default): the `wordcloud` binary, together with `http`.
 //! - `http` (default): `github::activity` and `semantic::Embed::fetch`.
 //!
 //! As a library, `default-features = false` drops both.
