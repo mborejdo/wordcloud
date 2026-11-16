@@ -3,6 +3,14 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## 2.0.2 - 2026-11-16
+
+### Fixed
+
+- `fill`: a copy keeps away from its word and from all its other copies (it only kept away
+  from the last one, so two could sit side by side), and is at most 70% of the word's size
+  (it could be a twin). Layouts with `fill` move; layouts without it do not.
+
 ## 2.0.1 - 2026-11-16
 
 ### Fixed

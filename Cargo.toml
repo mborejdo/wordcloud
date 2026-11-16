@@ -1,6 +1,6 @@
 [package]
 name = "wordcloud"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2024"
 # The highest floor any dependency declares (image, time). The MSRV-aware resolver holds a
 # dependency back below its own floor, so keep this at or above it.

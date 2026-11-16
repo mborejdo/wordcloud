@@ -71,8 +71,8 @@ wordcloud cloud.toml --shape examples/star.png --width 560 --height 560 --fill
 
 - The picture is black on white: words go where it is dark. `--invert` swaps that.
 - It is stretched to the canvas, so give the canvas the picture's proportions.
-- `--fill` copies the lighter words into the gaps, small, up to four times each. That fills
-  the shape into its corners.
+- `--fill` copies the lighter words into the gaps: smaller than the word, up to four times
+  each, the copies far apart. That fills the shape into its corners.
 - In the list: `shape = "star.png"`, relative to the list.
 
 ## Weights
@@ -102,7 +102,7 @@ Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your 
 ## Library
 
 ```toml
-wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v2.0.1", default-features = false }
+wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v2.0.2", default-features = false }
 ```
 
 ```rust

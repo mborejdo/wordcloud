@@ -718,6 +718,9 @@ pub fn generate(
 /// that no short word takes over.
 const MAX_COPIES: usize = 4;
 
+/// The largest a copy gets, as a share of its word's size: it reads as an echo, not a twin.
+const COPY_SIZE: f32 = 0.7;
+
 /// The empty grid with the mask's blocked cells set.
 fn blocked_grid(options: &Options, mask: Option<&MaskImage>) -> Grid {
     let (width, height) = options.grid_size();
@@ -799,22 +802,23 @@ impl Packer<'_> {
     }
 
     /// [`Options::fill`]: drop copies of the words into the gaps left after a pass. Only words
-    /// up to the median size are copied, never larger than the word itself, [`MAX_COPIES`] times
-    /// at most. Sizes run from the median down to `min_size`, lightest words first at each
-    /// size; spots are tried from the centre outwards. Returns the bits the copies took.
+    /// up to the median size are copied, [`MAX_COPIES`] times at most, each at [`COPY_SIZE`] of
+    /// the word or smaller and a quarter of the canvas away from the word and its other copies.
+    /// Sizes run from the median down to `min_size`, lightest words first at each size; spots
+    /// are tried from the centre outwards. Returns the bits the copies took.
     fn fill_gaps(&self, grid: &mut Grid, placed: &mut Vec<Placed>, scale: f32) -> Option<u32> {
         let mut relative: Vec<f32> = self.prepared.iter().map(|p| p.relative).collect();
         relative.sort_by(f32::total_cmp);
         let floor = self.options.min_size;
         let median = *relative.get(relative.len() / 2)?;
-        let mut size = (scale * median).max(floor);
+        let mut size = (COPY_SIZE * scale * median).max(floor);
         let spots = Spots::new(grid);
-        // Where each word was set last (top left, grid px): its next copy keeps away from there.
-        let mut last = vec![None; self.prepared.len()];
+        // Where each word and its copies are (top left, grid px): the next copy keeps away from
+        // all of them.
+        let mut set = vec![Vec::new(); self.prepared.len()];
         for word in placed.iter() {
-            last[word.shape] = Some((word.transformation.ox, word.transformation.oy));
+            set[word.shape].push((word.transformation.ox, word.transformation.oy));
         }
-        let mut copies = vec![0; self.prepared.len()];
         let mut bits = 0;
         loop {
             if size < floor {
@@ -822,14 +826,15 @@ impl Packer<'_> {
             }
             // Sweep the words until a whole sweep sets nothing: one copy per word and sweep, so
             // the copies of a word spread out.
-            let mut set = true;
-            while set {
-                set = false;
+            let mut placing = true;
+            while placing {
+                placing = false;
                 for (shape_index, prepared) in self.prepared.iter().enumerate().rev() {
-                    // A copy never outgrows its word, and the heavy words are not copied at all.
-                    if copies[shape_index] == MAX_COPIES
+                    // A copy stays clearly smaller than its word (down to the smallest size), and
+                    // the heavy words are not copied at all.
+                    if set[shape_index].len() > MAX_COPIES
                         || prepared.relative > median
-                        || size > scale * prepared.relative
+                        || size > (COPY_SIZE * scale * prepared.relative).max(floor)
                     {
                         continue;
                     }
@@ -838,14 +843,11 @@ impl Packer<'_> {
                     let first = shape_index % 3 == 1;
                     for rotated in [first, !first] {
                         let sprite = self.sprite(prepared, size, rotated)?;
-                        if let Some(at) = spots.find(grid, &sprite, last[shape_index]) {
-                            let copy = self.settle(grid, &sprite, at, shape_index, true);
-                            last[shape_index] =
-                                Some((copy.transformation.ox, copy.transformation.oy));
-                            placed.push(copy);
-                            copies[shape_index] += 1;
+                        if let Some(at) = spots.find(grid, &sprite, &set[shape_index]) {
+                            set[shape_index].push((at.0 as f32, at.1 as f32));
+                            placed.push(self.settle(grid, &sprite, at, shape_index, true));
                             bits += sprite.ink();
-                            set = true;
+                            placing = true;
                             break;
                         }
                     }
@@ -982,13 +984,8 @@ impl Spots {
     }
 
     /// The first spot where `sprite`, centred on it, lies inside the grid, touches nothing and
-    /// is at least a quarter of the canvas away from `away` (both top left, grid px).
-    fn find(
-        &self,
-        grid: &Grid,
-        sprite: &Sprite,
-        away: Option<(f32, f32)>,
-    ) -> Option<(usize, usize)> {
+    /// is at least a quarter of the canvas away from every point in `away` (top left, grid px).
+    fn find(&self, grid: &Grid, sprite: &Sprite, away: &[(f32, f32)]) -> Option<(usize, usize)> {
         let (width, height) = (grid.width as f32, grid.height as f32);
         let (half_width, half_height) = (sprite.width / 2, sprite.height / 2);
         self.0
@@ -996,7 +993,7 @@ impl Spots {
             .filter_map(|&(x, y)| Some((x.checked_sub(half_width)?, y.checked_sub(half_height)?)))
             .filter(|&(x, y)| x + sprite.width <= grid.width && y + sprite.height <= grid.height)
             .filter(|&(x, y)| {
-                away.is_none_or(|(ax, ay)| {
+                away.iter().all(|&(ax, ay)| {
                     let (dx, dy) = ((x as f32 - ax) / width, (y as f32 - ay) / height);
                     dx * dx + dy * dy >= 0.25 * 0.25
                 })
