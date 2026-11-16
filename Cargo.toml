@@ -24,7 +24,8 @@ http = ["dep:ureq"]
 [[bin]]
 name = "wordcloud"
 path = "src/main.rs"
-required-features = ["cli"]
+# The binary calls the GitHub and embeddings clients, so it needs `http` as well.
+required-features = ["cli", "http"]
 
 [dependencies]
 anyhow = "1"
