@@ -1219,7 +1219,7 @@ mod tests {
             .map(|p| p.word.text.as_str())
             .collect();
         let cycle = ["Earworm", "Tune", "Ohrwurm", "Earworm"];
-        assert!(!texts.is_empty());
+        assert_ne!(texts, Vec::<&str>::new());
         assert_eq!(texts, cycle[..texts.len()]);
     }
 
