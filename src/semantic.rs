@@ -273,7 +273,7 @@ impl Scorer for Offline {
         }
         if let Some(i) = heads
             .iter()
-            .position(|h| h.related.iter().any(|r| norm(r) == key))
+            .position(|h| h.aliases().any(|r| norm(r) == key))
         {
             return hit("related in cloud.toml", i);
         }
@@ -285,7 +285,7 @@ impl Scorer for Offline {
             return hit("built-in alias", i);
         }
         if let Some(i) = heads.iter().position(|h| {
-            stem(&norm(&h.text)) == stemmed || h.related.iter().any(|r| stem(&norm(r)) == stemmed)
+            stem(&norm(&h.text)) == stemmed || h.aliases().any(|r| stem(&norm(r)) == stemmed)
         }) {
             return hit("stem match", i);
         }
@@ -457,6 +457,7 @@ fn merge_duplicates(heads: Vec<Word>) -> Vec<Explained> {
             Some(e) => {
                 e.word.weight = e.word.weight.max(head.weight);
                 e.word.related.extend(head.related);
+                e.word.variants.extend(head.variants);
                 e.reasons.push(format!("merged duplicate `{}`", head.text));
             },
             None => out.push(Explained {
@@ -497,6 +498,7 @@ fn fold_terms(
                     color: new_color.0.to_owned(),
                     color_dark: new_color.1.to_owned(),
                     related: Vec::new(),
+                    variants: Vec::new(),
                 },
                 reasons: vec![format!("new from terms, base {}", config.new_weight)],
             });
@@ -513,7 +515,7 @@ fn count_mentions(out: &mut [Explained], corpus: &str, config: &Config) {
     for (i, e) in out.iter().enumerate() {
         let word = &e.word;
         let spellings = std::iter::once(word.text.as_str())
-            .chain(word.related.iter().map(String::as_str))
+            .chain(word.aliases().map(String::as_str))
             .map(tokens)
             .chain(builtin(&word.text).iter().map(|a| vec![stem(a)]));
         phrases.extend(spellings.filter(|p| !p.is_empty()).map(|p| (i, p)));
@@ -606,6 +608,7 @@ mod tests {
             color: "#000000".into(),
             color_dark: "#ffffff".into(),
             related: related.iter().map(|s| (*s).into()).collect(),
+            variants: Vec::new(),
         }
     }
 

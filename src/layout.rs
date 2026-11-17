@@ -580,7 +580,8 @@ impl Grid {
 #[derive(Debug)]
 struct Prepared {
     index: usize,
-    shaped: Shaped,
+    /// The word, then its variants.
+    forms: Vec<Shaped>,
     relative: f32,
     rotated: bool,
     start: (f32, f32),
@@ -596,6 +597,8 @@ pub struct Placed {
     /// A small extra copy that fills a gap ([`Options::fill`]), not the word's own spot.
     pub copy: bool,
     shape: usize,
+    /// 0: the word itself; 1..: one of its variants.
+    form: usize,
     transformation: Transformation,
 }
 
@@ -623,7 +626,7 @@ pub struct Cloud {
     pub dropped: Vec<String>,
     /// The global scale found by bisection: font size in px of the heaviest word.
     pub scale: f32,
-    shapes: Vec<Shaped>,
+    shapes: Vec<Vec<Shaped>>,
     #[cfg(test)]
     grid: Grid,
     #[cfg(test)]
@@ -666,6 +669,7 @@ struct Packer<'a> {
 ///         color: "#111318".into(),
 ///         color_dark: "#e6e7ea".into(),
 ///         related: vec![],
+///         variants: vec![],
 ///     })
 ///     .collect();
 /// let options = Options { width: 300, height: 300, ..Options::default() };
@@ -706,7 +710,7 @@ pub fn generate(
         placed: pass.placed,
         dropped: pass.dropped,
         scale: lo,
-        shapes: packer.prepared.into_iter().map(|p| p.shaped).collect(),
+        shapes: packer.prepared.into_iter().map(|p| p.forms).collect(),
         #[cfg(test)]
         grid: pass.grid,
         #[cfg(test)]
@@ -749,16 +753,20 @@ fn prepare(words: &[Word], face: &rustybuzz::Face<'_>, options: &Options) -> Res
     let mut prepared = Vec::new();
     for (index, _) in order {
         let word = &words[index];
-        let Some(shaped) = shape(face, &word.text) else {
-            bail!("font has no outlines for `{}`", word.text)
-        };
+        let mut forms = Vec::new();
+        for text in std::iter::once(&word.text).chain(&word.variants) {
+            let Some(shaped) = shape(face, text) else {
+                bail!("font has no outlines for `{text}`")
+            };
+            forms.push(shaped);
+        }
         let rotated = word.weight < max_weight && rng.f32() < options.vertical;
         let start = ((rng.f32() - 0.5) * 0.4, (rng.f32() - 0.5) * 0.4);
         let theta0 = rng.f32() * std::f32::consts::TAU;
         let direction = if rng.f32() < 0.5 { 1.0 } else { -1.0 };
         prepared.push(Prepared {
             index,
-            shaped,
+            forms,
             relative: (word.weight / max_weight).powf(options.contrast),
             rotated,
             start,
@@ -772,10 +780,16 @@ fn prepare(words: &[Word], face: &rustybuzz::Face<'_>, options: &Options) -> Res
 impl Packer<'_> {
     /// The sprite of `prepared` at `size` canvas px. Each sprite carries half the gap, so two
     /// neighbours sit `gap` apart. Big words get more air: plus 8% of their size.
-    fn sprite(&self, prepared: &Prepared, size: f32, rotated: bool) -> Option<Sprite> {
+    fn sprite(&self, prepared: &Prepared, form: usize, size: f32, rotated: bool) -> Option<Sprite> {
         let resolution = self.options.res as f32;
         let gap = ((self.options.gap + 0.08 * size) * resolution / 2.0).round() as usize;
-        Sprite::new(&prepared.shaped, size * resolution, self.upem, rotated, gap)
+        Sprite::new(
+            &prepared.forms[form],
+            size * resolution,
+            self.upem,
+            rotated,
+            gap,
+        )
     }
 
     /// Mark `sprite` on the grid at (x, y) and return the word placed there.
@@ -784,14 +798,19 @@ impl Packer<'_> {
         grid: &mut Grid,
         sprite: &Sprite,
         (x, y): (usize, usize),
-        shape: usize,
+        (shape, form): (usize, usize),
         copy: bool,
     ) -> Placed {
         grid.place(sprite, x, y);
+        let mut word = self.words[self.prepared[shape].index].clone();
+        if form > 0 {
+            word.text = word.variants[form - 1].clone();
+        }
         Placed {
-            word: self.words[self.prepared[shape].index].clone(),
+            word,
             copy,
             shape,
+            form,
             transformation: Transformation {
                 ox: x as f32,
                 oy: y as f32,
@@ -819,6 +838,7 @@ impl Packer<'_> {
         for word in placed.iter() {
             set[word.shape].push((word.transformation.ox, word.transformation.oy));
         }
+        let mut copies = vec![0; self.prepared.len()];
         let mut bits = 0;
         loop {
             if size < floor {
@@ -838,14 +858,17 @@ impl Packer<'_> {
                     {
                         continue;
                     }
+                    // The copies take the variants in turn, then the word itself.
+                    let form = (copies[shape_index] + 1) % prepared.forms.len();
                     // Alternate the turn by word, so the copies fill tall gaps as well as wide
                     // ones.
                     let first = shape_index % 3 == 1;
                     for rotated in [first, !first] {
-                        let sprite = self.sprite(prepared, size, rotated)?;
+                        let sprite = self.sprite(prepared, form, size, rotated)?;
                         if let Some(at) = spots.find(grid, &sprite, &set[shape_index]) {
                             set[shape_index].push((at.0 as f32, at.1 as f32));
-                            placed.push(self.settle(grid, &sprite, at, shape_index, true));
+                            copies[shape_index] += 1;
+                            placed.push(self.settle(grid, &sprite, at, (shape_index, form), true));
                             bits += sprite.ink();
                             placing = true;
                             break;
@@ -876,14 +899,14 @@ impl Packer<'_> {
                 };
                 let mut spot = None;
                 for &rotated in turns {
-                    let sprite = self.sprite(prepared, size, rotated)?;
+                    let sprite = self.sprite(prepared, 0, size, rotated)?;
                     if let Some(at) = find(&grid, &sprite, prepared, resolution) {
                         spot = Some((sprite, at));
                         break;
                     }
                 }
                 if let Some((sprite, at)) = spot {
-                    placed.push(self.settle(&mut grid, &sprite, at, shape_index, false));
+                    placed.push(self.settle(&mut grid, &sprite, at, (shape_index, 0), false));
                     sprite_bits += sprite.ink();
                     fits = true;
                     break;
@@ -1023,7 +1046,10 @@ impl Cloud {
             );
         }
         for placed in &self.placed {
-            let data = svg_path(&self.shapes[placed.shape].segments, &placed.transformation);
+            let data = svg_path(
+                &self.shapes[placed.shape][placed.form].segments,
+                &placed.transformation,
+            );
             let fill = attr_escape(placed.fill(dark));
             let _ = writeln!(
                 svg,
@@ -1055,9 +1081,10 @@ impl Cloud {
             let mut paint = Paint::default();
             paint.set_color_rgba8(rgb.red, rgb.green, rgb.blue, 255);
             paint.anti_alias = true;
-            if let Some(path) =
-                skia_path(&self.shapes[placed.shape].segments, &placed.transformation)
-            {
+            if let Some(path) = skia_path(
+                &self.shapes[placed.shape][placed.form].segments,
+                &placed.transformation,
+            ) {
                 pixmap.fill_path(
                     &path,
                     &paint,
@@ -1126,6 +1153,7 @@ mod tests {
             color: "#111318".into(),
             color_dark: "#e6e7ea".into(),
             related: vec![],
+            variants: vec![],
         })
         .collect()
     }
@@ -1169,6 +1197,30 @@ mod tests {
         assert_eq!(a.grid.count(), a.sprite_bits);
         let c = generate(&words(), font, &options(8), None).expect("layout");
         assert_ne!(a.svg(None, false), c.svg(None, false));
+    }
+
+    #[test]
+    fn fill_copies_take_the_variants_in_turn_then_the_word() {
+        let mut words = words();
+        let last = words.last_mut().expect("words");
+        last.variants = vec!["Earworm".into(), "Tune".into()];
+        let options = Options {
+            width: 480,
+            height: 160,
+            fill: true,
+            ..options(7)
+        };
+        let a = generate(&words, crate::DEFAULT_FONT, &options, None).expect("layout");
+        assert_eq!(a.grid.count(), a.sprite_bits);
+        let texts: Vec<&str> = a
+            .placed
+            .iter()
+            .filter(|p| p.copy && ["Ohrwurm", "Earworm", "Tune"].contains(&p.word.text.as_str()))
+            .map(|p| p.word.text.as_str())
+            .collect();
+        let cycle = ["Earworm", "Tune", "Ohrwurm", "Earworm"];
+        assert!(!texts.is_empty());
+        assert_eq!(texts, cycle[..texts.len()]);
     }
 
     #[test]

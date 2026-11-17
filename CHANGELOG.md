@@ -3,6 +3,19 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## Unreleased
+
+### Added
+
+- `variants` on a word: `{ text = "Linux", variants = ["Debian", "Ubuntu", "Alpine"] }`. The
+  `fill` copies take the variants in turn, then the word itself, so the gaps show related
+  words instead of the same word again. Variants fold terms like `related`.
+
+### Changed
+
+- **Breaking (library):** `Word` has a new public field `variants`; code that builds a `Word`
+  literal adds `variants: vec![]`. Lists without variants lay out as before.
+
 ## 2.0.2 - 2026-11-16
 
 ### Fixed

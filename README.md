@@ -61,6 +61,9 @@ words = ["Sisu", "Feierabend", "Kombinować"]
 `vertical`, `fill`. A flag wins over the list. The full example, with colours for light and
 dark, is [`examples/cloud.toml`](examples/cloud.toml).
 
+A word can bring `variants`: `{ text = "Linux", variants = ["Debian", "Ubuntu", "Alpine"] }`.
+With `--fill` its copies take them in turn, so a gap says Debian instead of Linux once more.
+
 ## Shapes
 
 <img src="examples/star-cloud.png" alt="The same words filling a star" width="280" align="right">

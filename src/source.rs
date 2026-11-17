@@ -112,6 +112,9 @@ pub enum TierWord {
         /// Aliases and related terms that fold into this word.
         #[serde(default)]
         related: Vec<String>,
+        /// Texts the fill copies take instead of the word: `Linux` -> `Debian`, `Alpine`.
+        #[serde(default)]
+        variants: Vec<String>,
     },
 }
 
@@ -128,6 +131,9 @@ pub struct Entry {
     /// Aliases and related terms that fold into this word.
     #[serde(default)]
     pub related: Vec<String>,
+    /// Texts the fill copies take instead of the word.
+    #[serde(default)]
+    pub variants: Vec<String>,
 }
 
 impl FromStr for Source {
@@ -175,9 +181,13 @@ impl Source {
             let color = self.color(tier.color.as_deref());
             let color_dark = self.color_dark(tier.color.as_deref());
             tier.words.iter().map(move |word| {
-                let (text, related) = match word {
-                    TierWord::Plain(text) => (text.clone(), Vec::new()),
-                    TierWord::Rich { text, related } => (text.clone(), related.clone()),
+                let (text, related, variants) = match word {
+                    TierWord::Plain(text) => (text.clone(), Vec::new(), Vec::new()),
+                    TierWord::Rich {
+                        text,
+                        related,
+                        variants,
+                    } => (text.clone(), related.clone(), variants.clone()),
                 };
                 Word {
                     text,
@@ -185,6 +195,7 @@ impl Source {
                     color: color.clone(),
                     color_dark: color_dark.clone(),
                     related,
+                    variants,
                 }
             })
         });
@@ -194,6 +205,7 @@ impl Source {
             color: self.color(entry.color.as_deref()),
             color_dark: self.color_dark(entry.color.as_deref()),
             related: entry.related.clone(),
+            variants: entry.variants.clone(),
         });
         tiers.chain(extra).collect()
     }
@@ -247,6 +259,16 @@ pub struct Word {
     pub color_dark: String,
     /// Aliases and related terms that fold into this word (semantic step).
     pub related: Vec<String>,
+    /// Texts the fill copies take in turn instead of the word ([`crate::Options::fill`]);
+    /// they fold terms like `related`.
+    pub variants: Vec<String>,
+}
+
+impl Word {
+    /// `related` and `variants`: every text that folds into this word.
+    pub(crate) fn aliases(&self) -> impl Iterator<Item = &String> {
+        self.related.iter().chain(&self.variants)
+    }
 }
 
 #[cfg(test)]
