@@ -1,7 +1,7 @@
 name: release
 
 # Push a full semver tag (v1.2.3): builds the binaries, creates the GitHub release and moves the
-# major tag (v2) to it, so `uses: mborejdo/wordcloud@v2` always gets the newest v2.x.y.
+# major tag (v3) to it, so `uses: mborejdo/wordcloud@v3` always gets the newest v3.x.y.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]

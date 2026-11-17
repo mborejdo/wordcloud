@@ -3,7 +3,7 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
-## Unreleased
+## 3.0.0 - 2026-11-17
 
 ### Added
 

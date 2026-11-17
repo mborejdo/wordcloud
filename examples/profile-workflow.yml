@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mborejdo/wordcloud@v2
+      - uses: mborejdo/wordcloud@v3
         with:
           wordlist: cloud.toml
           out: cloud.svg
