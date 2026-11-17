@@ -3,6 +3,15 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## Unreleased
+
+### Fixed
+
+- Vertical words no longer frame the cloud at the left and right edge. They are placed right
+  after the heaviest word, before the middle fills up, and a word turns vertical only while
+  it is at most 40% of the canvas height; a longer one stays horizontal. Layouts with
+  `vertical` move.
+
 ## 3.0.0 - 2026-11-17
 
 ### Added

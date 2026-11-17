@@ -724,6 +724,8 @@ const MAX_COPIES: usize = 4;
 
 /// The largest a copy gets, as a share of its word's size: it reads as an echo, not a twin.
 const COPY_SIZE: f32 = 0.7;
+/// A vertical word is at most this share of the canvas height; a longer one stays horizontal.
+const MAX_VERTICAL: f32 = 0.4;
 
 /// The empty grid with the mask's blocked cells set.
 fn blocked_grid(options: &Options, mask: Option<&MaskImage>) -> Grid {
@@ -774,6 +776,9 @@ fn prepare(words: &[Word], face: &rustybuzz::Face<'_>, options: &Options) -> Res
             direction,
         });
     }
+    // The vertical words go right after the heaviest one: placed later, they only find a free
+    // column at the canvas edges.
+    prepared[1..].sort_by_key(|p| !p.rotated);
     Ok(prepared)
 }
 
@@ -891,8 +896,8 @@ impl Packer<'_> {
             let mut size = (scale * prepared.relative).max(self.options.min_size);
             let mut fits = false;
             for _ in 0..if strict { 1 } else { 8 } {
-                // With `fill`, a vertical word that finds no spot is tried horizontally too.
-                let turns: &[bool] = if self.options.fill && prepared.rotated {
+                // A vertical word that is too long or finds no spot is tried horizontally.
+                let turns: &[bool] = if prepared.rotated {
                     &[true, false]
                 } else {
                     &[prepared.rotated]
@@ -900,6 +905,11 @@ impl Packer<'_> {
                 let mut spot = None;
                 for &rotated in turns {
                     let sprite = self.sprite(prepared, 0, size, rotated)?;
+                    // A long vertical word only finds a free column at the canvas edges once
+                    // the middle is set, so it stays horizontal.
+                    if rotated && sprite.height as f32 > MAX_VERTICAL * grid.height as f32 {
+                        continue;
+                    }
                     if let Some(at) = find(&grid, &sprite, prepared, resolution) {
                         spot = Some((sprite, at));
                         break;
@@ -1197,6 +1207,28 @@ mod tests {
         assert_eq!(a.grid.count(), a.sprite_bits);
         let c = generate(&words(), font, &options(8), None).expect("layout");
         assert_ne!(a.svg(None, false), c.svg(None, false));
+    }
+
+    #[test]
+    fn vertical_words_sit_inside_not_only_at_the_edges() {
+        let options = Options {
+            width: 800,
+            height: 300,
+            vertical: 0.5,
+            ..options(7)
+        };
+        let a = generate(&words(), crate::DEFAULT_FONT, &options, None).expect("layout");
+        let vertical: Vec<f32> = a
+            .placed
+            .iter()
+            .filter(|p| !p.copy && p.transformation.rotated)
+            .map(|p| p.transformation.ox / p.transformation.div / 800.0)
+            .collect();
+        assert_ne!(vertical, Vec::<f32>::new());
+        assert!(
+            vertical.iter().any(|x| (0.25..0.75).contains(x)),
+            "vertical words only at the edges: {vertical:?}"
+        );
     }
 
     #[test]
