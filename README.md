@@ -1,11 +1,7 @@
 # wordcloud
 
-A word list in, a word cloud out.
-
-Words are packed by their glyph outlines, not by bounding boxes, so they sit close and stay
-readable. One layout gives a light and a dark variant on a transparent background, as SVG and
-PNG. The words fill the canvas, an ellipse, a circle or any image you give it. Use it as a
-binary, or as a GitHub Action that re-renders the cloud on your profile.
+A word list in, a word cloud out: words packed by glyph outline, not bounding box, as light
+and dark SVG or PNG on a transparent background. A CLI and a GitHub Action.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="examples/cloud-dark.svg">
@@ -26,43 +22,36 @@ cargo install --git https://github.com/mborejdo/wordcloud --locked
 ```sh
 wordcloud cloud.toml                       # cloud.svg and cloud-dark.svg
 wordcloud cloud.toml --png                 # the PNGs too
-wordcloud cloud.toml --shape circle        # a built-in shape: rect, ellipse, circle
-wordcloud cloud.toml --shape star.png      # any image as the shape
+wordcloud cloud.toml --shape circle        # rect, ellipse, circle, or an image like star.png
 wordcloud cloud.toml --fill                # small copies of the lighter words fill the gaps
-wordcloud cloud.toml --seed 7              # another seed, another layout
+wordcloud cloud.toml --seed 7              # another layout; same list and seed, same cloud
 wordcloud cloud.toml --explain             # every final weight and why
-wordcloud --help                           # all flags
 ```
 
-The same list and seed always give the same cloud.
+`wordcloud --help` lists all flags.
 
 ## Word list
 
-TOML. A bigger weight gives a bigger word:
-
 ```toml
-[style]
+[style]                  # what the flags take; a flag wins
 width = 1000
 height = 1000
-shape = "circle"
+shape = "circle"         # or an image path, relative to the list
+# also: seed, font, invert, vertical, fill
 
 [[tier]]
-weight = 10
+weight = 10              # bigger weight, bigger word
 color = "accent"
 words = ["Kalsarikännit"]
 
 [[tier]]
 weight = 7
 color = "ink"
-words = ["Sisu", "Feierabend", "Kombinować"]
+words = ["Sisu", "Feierabend", { text = "Linux", variants = ["Debian", "Ubuntu"] }]
 ```
 
-`[style]` takes what the flags take: `width`, `height`, `seed`, `font`, `shape`, `invert`,
-`vertical`, `fill`. A flag wins over the list. The full example, with light and dark colours,
-is [`examples/cloud.toml`](examples/cloud.toml).
-
-A word can bring `variants`: `{ text = "Linux", variants = ["Debian", "Ubuntu", "Alpine"] }`.
-With `--fill` its copies take them in turn, so a gap shows Debian instead of Linux again.
+`--fill` copies take a word's `variants` in turn. Full example, with light and dark colours:
+[`examples/cloud.toml`](examples/cloud.toml).
 
 ## Shapes
 
@@ -72,21 +61,19 @@ With `--fill` its copies take them in turn, so a gap shows Debian instead of Lin
 wordcloud cloud.toml --shape examples/star.png --width 560 --height 560 --fill
 ```
 
-- The image is black on white: words go where it is dark. `--invert` flips that.
-- It is stretched to the canvas, so give the canvas the image's proportions.
-- `--fill` copies the lighter words into the gaps: up to four copies each, at most 70% of the
-  word's size, far apart. That fills the shape into its corners.
-- In the list: `shape = "star.png"`, relative to the list.
+Words go where the image is dark (`--invert` flips it). The image is stretched to the canvas,
+so match its proportions. `--fill` adds up to four copies of each lighter word, at most 70% of
+its size, so the shape fills into its corners.
 
 ## Weights
 
-- `terms` fold into the word they belong to (`k8s`, `kubectl` count for Kubernetes): exact
-  match, your `related` lists, a built-in alias table, light stemming.
-- `--corpus file.txt`: words get a boost per mention in your text. The text stays local.
-- `--github user`: words that match a user's recent public languages and topics get a boost.
-  Nothing new is added.
-- `[semantic] backend = "embed"` (or `--scorer embed`): match terms with any OpenAI-compatible
-  embeddings endpoint. It sends the word list only.
+- `terms` fold into their word (`k8s`, `kubectl` count for Kubernetes) by exact match, your
+  `related` lists, a built-in alias table and light stemming.
+- `--corpus file.txt` boosts words per mention in your text, which stays local.
+- `--github user` boosts words matching the user's recent public languages and topics; it adds no
+  words.
+- `--scorer embed` (`[semantic] backend = "embed"`) matches terms via an OpenAI-compatible
+  embeddings endpoint, sending only the word list.
 
 ## On your GitHub profile
 
@@ -98,10 +85,9 @@ wordcloud cloud.toml --shape examples/star.png --width 560 --height 560 --fill
     seed: ${{ github.run_number }}   # new layout every run
 ```
 
-Copy [`examples/profile-workflow.yml`](examples/profile-workflow.yml) into your profile repo
-(a daily reshuffle, plus a rebuild whenever you edit the list) and add
-[`examples/README-snippet.md`](examples/README-snippet.md) to its README. For a wide banner:
-`width = 1600`, `height = 600`, `fill = true`.
+[`examples/profile-workflow.yml`](examples/profile-workflow.yml) reshuffles daily and on list
+edits; [`examples/README-snippet.md`](examples/README-snippet.md) goes in the profile README.
+Wide banner: `width = 1600`, `height = 600`, `fill = true`.
 
 ## Library
 
@@ -119,17 +105,16 @@ let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &options, Some(
 std::fs::write("cloud.svg", cloud.svg(None, false))?;
 ```
 
-`default-features = false` leaves out the CLI and the HTTP parts. `cargo doc --open` has the
-rest.
+`default-features = false` drops the CLI and HTTP parts. The rest is in `cargo doc --open`.
 
 ## How it works
 
-1. Each word is shaped, kerning and ligatures included, and its glyph outlines are collected.
-2. The outline becomes a small bitmap, widened by half the gap between words.
-3. Largest first, each word spirals out from the centre and takes the first spot where its
-   bitmap touches nothing. A shape marks its outside as taken.
-4. The largest size at which every word fits is found by bisection.
-5. The SVG is written as glyph paths, so it needs no font.
+- Each word is shaped (kerning, ligatures) into glyph outlines.
+- The outline becomes a bitmap, widened by half the word gap.
+- Largest first, each word spirals out from the centre to the first free spot. A shape marks
+  its outside as taken.
+- Bisection finds the largest size at which every word fits.
+- The SVG is glyph paths, no font needed.
 
 ## Development
 
@@ -143,14 +128,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --locked
 cargo deny check
 ```
 
-CI runs the same, then renders the example and runs the action end to end. A change that moves
-words for the same list and seed is breaking and goes in the [CHANGELOG](CHANGELOG.md).
-
-Releases: bump `version` in `Cargo.toml` and push the tag `vX.Y.Z`. CI checks that they match,
-builds the binaries and moves `vX`.
+Moving words for the same list and seed is a breaking change. Release: bump `version` in
+`Cargo.toml`, push tag `vX.Y.Z`; CI checks they match, builds binaries and moves `vX`.
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT)
-at your option. The bundled font, Bricolage Grotesque in `fonts/`, is under the SIL Open Font
-License 1.1.
+[Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. The bundled font, Bricolage
+Grotesque in `fonts/`, is SIL OFL 1.1.

@@ -1,5 +1,5 @@
 name: wordcloud
-description: Render a TOML word list to a transparent SVG word cloud, plus a dark variant and optional PNGs.
+description: Render a TOML word list to a transparent SVG word cloud, a dark variant and optional PNGs.
 author: Michael Borejdo
 branding:
   icon: cloud
@@ -7,13 +7,13 @@ branding:
 
 inputs:
   wordlist:
-    description: Word list, a TOML file (format as in examples/cloud.toml).
+    description: TOML word list, see examples/cloud.toml.
     default: cloud.toml
   out:
-    description: SVG to write. <stem>-dark.svg goes next to it; with png also <stem>.png and <stem>-dark.png.
+    description: SVG to write. <stem>-dark.svg goes next to it, with png also <stem>.png and <stem>-dark.png.
     default: cloud.svg
   png:
-    description: Also write PNGs, at this many px per canvas px. Empty = no PNGs.
+    description: Write PNGs at this many px per canvas px. Empty = none.
     default: "2"
   width:
     description: Canvas width in px. Empty = [style] width, else 800.
@@ -25,16 +25,16 @@ inputs:
     description: Layout seed. Empty = [style] seed, else 90.
     default: ""
   shape:
-    description: Shape the words fill - rect, ellipse, circle, or an image whose dark pixels take words. Empty = [style] shape, else rect.
+    description: Shape to fill (rect, ellipse, circle, or an image whose dark pixels take words). Empty = [style] shape, else rect.
     default: ""
   github-user:
-    description: Boost words by this GitHub user's recent public languages and topics. Empty = off.
+    description: Boost words by this user's recent public GitHub languages and topics. Empty = off.
     default: ""
   version:
     description: Release tag of the prebuilt binary, or "latest".
     default: latest
   token:
-    description: Token for the release download and the GitHub API, only for the rate limit; the data is public.
+    description: Token for the release download and GitHub API, only for the rate limit (the data is public).
     default: ${{ github.token }}
 
 outputs:

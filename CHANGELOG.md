@@ -7,104 +7,97 @@ change that moves words for the same list and seed counts as breaking.
 
 ### Fixed
 
-- Vertical words no longer frame the cloud at the left and right edge. They are placed right
-  after the heaviest word, before the middle fills up, and a word turns vertical only while
-  it is at most 40% of the canvas height; a longer one stays horizontal. Layouts with
+- Vertical words no longer frame the cloud at the left and right edge: they go right after the
+  heaviest word, and only words up to 40% of the canvas height turn vertical. Layouts with
   `vertical` move.
 
 ## 3.0.0 - 2026-11-17
 
 ### Added
 
-- `variants` on a word: `{ text = "Linux", variants = ["Debian", "Ubuntu", "Alpine"] }`. The
-  `fill` copies take the variants in turn, then the word itself, so the gaps show related
-  words instead of the same word again. Variants fold terms like `related`.
+- `variants` on a word: `{ text = "Linux", variants = ["Debian", "Ubuntu", "Alpine"] }`. `fill`
+  copies take the variants in turn, then the word, so gaps show related words. Variants fold
+  terms like `related`.
 
 ### Changed
 
-- **Breaking (library):** `Word` has a new public field `variants`; code that builds a `Word`
-  literal adds `variants: vec![]`. Lists without variants lay out as before.
+- **Breaking (library):** new public field `Word::variants`; `Word` literals add
+  `variants: vec![]`. Lists without variants lay out as before.
 
 ## 2.0.2 - 2026-11-16
 
 ### Fixed
 
-- `fill`: a copy keeps away from its word and from all its other copies (it only kept away
-  from the last one, so two could sit side by side), and is at most 70% of the word's size
-  (it could be a twin). Layouts with `fill` move; layouts without it do not.
+- `fill`: a copy keeps away from its word and all its other copies (not only the last one), and
+  is at most 70% of the word's size (it could be a twin). Layouts with `fill` move, others don't.
 
 ## 2.0.1 - 2026-11-16
 
 ### Fixed
 
-- The release builds the macOS binary on macOS 15: GitHub retired the macOS 14 runner, so
-  2.0.0 has no binaries. No change to the crate.
+- macOS binary built on macOS 15, since GitHub retired the macOS 14 runner and 2.0.0 shipped no
+  binaries. Crate unchanged.
 
 ## 2.0.0 - 2026-11-16
 
 ### Added
 
-- Any image as the shape: `--shape star.png` and `[style] shape = "star.png"` (relative to the
-  word list) beside the built-in names, `--invert` and `[style] invert`. `--mask` and
-  `--mask-invert` stay as aliases.
-- `MaskImage::open` (a built-in name or an image file) and `MaskImage::from_bytes` (an image
-  from memory).
+- Any image as the shape: `--shape star.png` or `[style] shape = "star.png"` (relative to the
+  list), with `--invert` and `[style] invert`. `--mask` and `--mask-invert` stay as aliases.
+- `MaskImage::open` (built-in name or image file) and `MaskImage::from_bytes` (image in memory).
 
 ### Changed
 
-- `fill` copies a light word up to four times (was once), down to `min_size`, so a shape is
-  traced into its corners. Layouts with `fill` move; layouts without it do not.
-- `Source::lint` no longer reports an unknown shape: a name that is not built in is an image
-  file, checked when the shape is opened.
-- One wording for the command line's help and errors (`read <file>`, `unknown shape ...`).
-- Internal clean-up of the layout code; CI lints and tests the build without default features.
+- `fill` copies a light word up to four times (was once), down to `min_size`, so a shape fills
+  into its corners. Layouts with `fill` move, others don't.
+- `Source::lint` no longer reports an unknown shape: a name that isn't built in is an image
+  file, checked when opened.
+- One wording for CLI help and errors (`read <file>`, `unknown shape ...`).
+- Layout code cleaned up; CI lints and tests without default features.
 
 ### Fixed
 
-- `--no-default-features --features cli` no longer fails to compile: the binary needs `http`
-  too and is skipped without it. The library builds as before.
-- `Cloud::svg` escapes the background and the fill colours in their attributes: a colour
-  holding a quote no longer breaks the SVG. A `#rrggbb` colour is written as before.
+- `--no-default-features --features cli` compiles again: the binary needs `http` too and is
+  skipped without it. The library builds as before.
+- `Cloud::svg` escapes background and fill colours, so a colour with a quote no longer breaks
+  the SVG. `#rrggbb` is written as before.
 
 ## 1.1.1 - 2026-11-04
 
 ### Changed
 
-- Toolchain for working on the repo: Rust 1.99.1 (was 1.98.1). The crate still builds on
-  `rust-version` 1.88 and newer.
-- Dependency update (`toml_writer` 1.2.0). No change to any layout.
+- Repo toolchain Rust 1.99.1 (was 1.98.1); the crate still builds on `rust-version` 1.88+.
+- `toml_writer` 1.2.0. No layout changes.
 
 ## 1.1.0 - 2026-11-03
 
 ### Added
 
-- `Shape` (`rect`, `ellipse`, `circle`) and `MaskImage::from_shape`, which cannot fail.
+- `Shape` (`rect`, `ellipse`, `circle`) and `MaskImage::from_shape`, which can't fail.
 - `Backend` (`offline`, `embed`) for the semantic step.
 - `Rgb`, a parsed `#rrggbb` colour.
-- `Source` implements `FromStr`, so a word list can come from a string.
+- `Source` implements `FromStr`: a word list from a string.
 - `Options` implements `Default`.
-- `--fill`, `[style] fill = true` and `Options::fill`: fill the canvas edge to edge. A vertical
-  word that finds no room is set horizontally instead, and after the layout copies of the
-  lighter half of the words (at most one each, never larger than the word) fill the gaps,
-  centre first and away from the original. Made for a wide `rect` banner, e.g. 1600x600.
-  Off by default: without it every layout is unchanged.
-- `Placed::copy` marks a fill copy; `Cloud::placed` lists the copies after the words.
-- `Source::lint` also reports colours that resolve to neither a `[colors]` entry nor
-  `#rrggbb`, an unknown `[style] shape` and an unknown `[semantic] backend`.
-- `--help` text for `--width`, `--height`, `--seed` and `--mask-invert`.
-- Docs on every public item, with examples that run as tests.
+- `--fill`, `[style] fill = true`, `Options::fill`: fill the canvas edge to edge. A vertical word
+  with no room goes horizontal, then copies of the lighter half (one each, never larger than the
+  word) fill the gaps, centre first, away from the original. Made for wide `rect` banners like
+  1600x600. Off by default, so layouts are unchanged without it.
+- `Placed::copy` marks a fill copy; `Cloud::placed` lists copies after the words.
+- `Source::lint` also reports colours that are neither a `[colors]` entry nor `#rrggbb`, an
+  unknown `[style] shape` and an unknown `[semantic] backend`.
+- `--help` text for `--width`, `--height`, `--seed`, `--mask-invert`.
+- Docs on every public item, examples run as tests.
 
 ### Changed
 
-- `Cargo.toml` version is now `1.0.0`, matching the released tag (it said `0.1.0`, so
-  `wordcloud --version` was wrong). The release workflow refuses a tag that does not match.
-- `Options` and `Style` have a new `fill` field, so a struct literal without `..` needs it.
-- `--shape` and `--scorer` are parsed into `Shape` and `Backend`. Same accepted values, same
-  error for anything else.
-- Strict lints (clippy `pedantic`, `nursery`, `cargo`, no `unwrap`/`expect`/`println!` outside
-  tests and the CLI), `cargo deny` and rustdoc with warnings denied, all in CI.
+- `Cargo.toml` version is `1.0.0`, matching the released tag (it said `0.1.0`, so
+  `wordcloud --version` was wrong). The release workflow refuses a mismatched tag.
+- `Options` and `Style` have a new `fill` field; struct literals without `..` need it.
+- `--shape` and `--scorer` parse into `Shape` and `Backend`. Same values, same error otherwise.
+- Strict lints (clippy `pedantic`, `nursery`, `cargo`; no `unwrap`/`expect`/`println!` outside
+  tests and the CLI), `cargo deny`, rustdoc with warnings denied, all in CI.
 
-Layouts are byte-identical to 1.0.0: same list + same seed = same SVG and PNG.
+Layouts are byte-identical to 1.0.0: same list and seed, same SVG and PNG.
 
 ## 1.0.0 - 2026-11-03
 
