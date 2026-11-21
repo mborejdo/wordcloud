@@ -1,4 +1,4 @@
-//! Tiny sync HTTP helpers (feature `http`): GitHub API reads and the embeddings POST.
+//! Small blocking HTTP helpers (feature `http`): GitHub API reads and the embeddings POST.
 
 use anyhow::{Context, Result};
 use serde_json::Value;

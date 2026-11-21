@@ -1,4 +1,4 @@
-//! Word clouds from real glyph outlines: deterministic, transparent SVG and PNG.
+//! Word clouds from glyph outlines, as transparent SVG and PNG.
 //!
 //! 1. Every word is shaped with rustybuzz (kerning, ligatures) and its real glyph outlines are
 //!    collected via ttf-parser - no bounding boxes.
@@ -10,8 +10,8 @@
 //! 4. An optional shape, a [`Shape`] or any image ([`MaskImage::open`]), pre-fills the
 //!    occupancy: blocked pixels take no words.
 //! 5. One global scale is found by bisection: the largest scale at which every word fits at its
-//!    nominal size. The result is written as SVG glyph paths (crisp anywhere, no font needed),
-//!    optionally also as PNG.
+//!    nominal size. The result is written as SVG glyph paths (no font needed), optionally also
+//!    as PNG.
 //!
 //! Everything random comes from one seeded `SplitMix64`, so a seed always gives the same cloud.
 //!
@@ -51,7 +51,7 @@
     clippy::cast_possible_wrap,
     reason = "pixel <-> geometry conversions on canvas-sized values"
 )]
-// Same word list + same seed = same picture, across releases too. These lints suggest
+// Same word list + same seed = same cloud, across releases too. These lints suggest
 // `mul_add`, `hypot` and `midpoint`, which round differently and would move words.
 #![allow(
     clippy::suboptimal_flops,

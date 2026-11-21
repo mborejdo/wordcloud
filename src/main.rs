@@ -27,7 +27,7 @@ use wordcloud::{Backend, Cloud, Explained, MaskImage, Options, Source};
 )]
 #[command(
     version,
-    about = "Word clouds from real glyph outlines - deterministic, transparent SVG/PNG"
+    about = "Word clouds from glyph outlines: transparent SVG and PNG, the same cloud for the same seed"
 )]
 struct Cli {
     /// Word list, a TOML file.
@@ -48,7 +48,7 @@ struct Cli {
     /// Canvas height in px [default: [style] height, else 418].
     #[arg(long)]
     height: Option<u32>,
-    /// Layout seed: same list and seed, same picture [default: [style] seed].
+    /// Layout seed: same list and seed, same cloud [default: [style] seed, else 90].
     #[arg(long)]
     seed: Option<u64>,
     /// TTF or OTF file [default: [style] font, else the bundled Bricolage Grotesque].
@@ -61,10 +61,10 @@ struct Cli {
     /// Flip a shape image: its light pixels take words [default: [style] invert].
     #[arg(long, alias = "mask-invert")]
     invert: bool,
-    /// Share of vertical words, 0 to 1 [default: [style] vertical].
+    /// Share of vertical words, 0 to 1 [default: [style] vertical, else 0.18].
     #[arg(long)]
     vertical: Option<f32>,
-    /// Fill every gap with small copies of the lighter words [default: [style] fill].
+    /// Fill the gaps with small copies of the lighter words [default: [style] fill].
     #[arg(long)]
     fill: bool,
     /// Boost words by a GitHub user's recent public languages and topics.

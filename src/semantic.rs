@@ -1,13 +1,14 @@
 //! Semantic weighting before layout: related terms boost a head word.
 //!
 //! Input: the head words from the word list (tiers + `[[word]]`), a raw `terms` list and an
-//! optional text corpus (e.g. a CV). Output: the final word list, each with the reasons for its weight.
+//! optional text corpus (any plain text). Output: the final word list, each with the reasons
+//! for its weight.
 //!
 //! - every raw term is offered to a [`Scorer`]; if it belongs to a head word ("tsc" ->
 //!   TypeScript), the head gets `term_boost` (capped at `term_cap`). Terms that match nothing
 //!   become new words, and later terms can fold into those - that is the auto clustering.
 //! - every word then gets `mention_boost` per mention in the corpus (capped at `mention_cap`), so
-//!   what the text actually says counts. Longer phrases win: "React Native" is not also "React".
+//!   what the text says counts. Longer phrases win: "React Native" is not also "React".
 //!
 //! Backends: [`Offline`] (default; normalisation, light stemming, built-in alias table) and
 //! [`Embed`] (opt-in; any OpenAI-compatible embeddings endpoint, e.g. a local Ollama). The
