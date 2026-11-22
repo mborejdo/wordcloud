@@ -227,7 +227,7 @@ impl Source {
             } else if let Some(previous) = seen.insert(word.text.to_lowercase(), word.text.clone())
             {
                 findings.push(format!(
-                    "duplicate word `{}` (also `{previous}`)",
+                    "duplicate word \"{}\"; also \"{previous}\"",
                     word.text
                 ));
             }
@@ -238,12 +238,12 @@ impl Source {
         for (colour, word) in colours {
             if colour.parse::<Rgb>().is_err() {
                 findings.push(format!(
-                    "colour `{colour}` (first used by `{word}`) is not in [colours] and not #rrggbb"
+                    "colour: expected a [colours] name or #rrggbb, got \"{colour}\"; first used by \"{word}\""
                 ));
             }
         }
         if let Err(e) = self.semantic.backend.parse::<Backend>() {
-            findings.push(format!("[semantic] {e:#}"));
+            findings.push(format!("[semantic]: {e:#}"));
         }
         findings
     }
@@ -320,8 +320,8 @@ mod tests {
         .expect("parse");
         let findings = source.lint();
         assert_eq!(findings.len(), 2, "{findings:?}");
-        assert!(findings[0].starts_with("duplicate word `rust`"));
-        assert!(findings[1].starts_with("colour `ink`"));
+        assert!(findings[0].starts_with(r#"duplicate word "rust""#));
+        assert!(findings[1].contains(r#"got "ink""#));
     }
 
     #[test]
@@ -333,7 +333,12 @@ mod tests {
             accent = "#ffffff"
             [semantic]
             term_boost = 0.5
+            term_cap = 1.5
+            mention_boost = 0.25
+            mention_cap = 4
+            new_weight = 2.5
             new_color = "accent"
+            github_boost = 0.75
             github_cap = 2.0
             [[tier]]
             weight = 10
@@ -351,6 +356,11 @@ mod tests {
         assert_eq!(words[0].color_dark, "#ffffff");
         assert_eq!(words[1].color, "#ff4f00");
         assert!((source.semantic.term_boost - 0.5).abs() < 1e-6);
+        assert!((source.semantic.term_cap - 1.5).abs() < 1e-6);
+        assert!((source.semantic.mention_boost - 0.25).abs() < 1e-6);
+        assert_eq!(source.semantic.mention_cap, 4);
+        assert!((source.semantic.new_weight - 2.5).abs() < 1e-6);
+        assert!((source.semantic.github_boost - 0.75).abs() < 1e-6);
         assert!((source.semantic.github_cap - 2.0).abs() < 1e-6);
         assert_eq!(source.semantic.new_color, "accent");
     }
@@ -390,7 +400,7 @@ mod tests {
         .expect("parse");
         assert_eq!(
             source.lint(),
-            vec![r#"[semantic] backend: expected offline or embed, got "magic""#]
+            vec![r#"[semantic]: backend: expected offline or embed, got "magic""#]
         );
     }
 }

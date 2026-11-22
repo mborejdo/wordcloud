@@ -390,9 +390,7 @@ impl Embed {
     #[cfg(feature = "http")]
     pub fn fetch(config: &Config, heads: &[Word], terms: &[String]) -> Result<Self> {
         let (endpoint, body, input) = Self::request(config, heads, terms)?;
-        let key = std::env::var("WORDCLOUD_EMBED_API_KEY")
-            .or_else(|_| std::env::var("CLOUD_EMBED_API_KEY"))
-            .ok();
+        let key = api_key(|name| std::env::var(name).ok());
         let response = crate::http::post_json(&endpoint, &body, key.as_deref())?;
         Self::from_response(config, input, &response)
     }
@@ -600,9 +598,46 @@ pub fn corpus(value: &Value) -> String {
     text
 }
 
+/// The embed API key: `WORDCLOUD_EMBED_API_KEY`, else the older `CLOUD_EMBED_API_KEY`. An
+/// empty value counts as unset, so an empty secret in CI does not hide the other name.
+#[cfg_attr(
+    not(feature = "http"),
+    allow(dead_code, reason = "only the http fetch reads it")
+)]
+fn api_key(var: impl Fn(&str) -> Option<String>) -> Option<String> {
+    ["WORDCLOUD_EMBED_API_KEY", "CLOUD_EMBED_API_KEY"]
+        .into_iter()
+        .find_map(|name| var(name).filter(|key| !key.is_empty()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn api_key_new_name_first_empty_is_unset() {
+        fn from<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+            |name| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_owned())
+            }
+        }
+        let both = [
+            ("WORDCLOUD_EMBED_API_KEY", "new"),
+            ("CLOUD_EMBED_API_KEY", "old"),
+        ];
+        assert_eq!(api_key(from(&both)).as_deref(), Some("new"));
+        let old = [("CLOUD_EMBED_API_KEY", "old")];
+        assert_eq!(api_key(from(&old)).as_deref(), Some("old"));
+        let empty = [
+            ("WORDCLOUD_EMBED_API_KEY", ""),
+            ("CLOUD_EMBED_API_KEY", "old"),
+        ];
+        assert_eq!(api_key(from(&empty)).as_deref(), Some("old"));
+        assert_eq!(api_key(from(&[])), None);
+    }
 
     fn word(text: &str, weight: f32, related: &[&str]) -> Word {
         Word {
