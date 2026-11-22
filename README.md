@@ -94,7 +94,7 @@ Wide banner: `width = 1600`, `height = 600`, `fill = true`.
 ## Library
 
 ```toml
-wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v3.0.1", default-features = false }
+wordcloud = { git = "https://github.com/mborejdo/wordcloud", tag = "v3.1.0", default-features = false }
 ```
 
 ```rust
