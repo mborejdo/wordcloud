@@ -111,11 +111,18 @@ struct Cli {
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u16).range(1..=60))]
     fps: Option<u16>,
     /// Seconds until the last word has settled (--seconds 3) [default: 4].
-    #[arg(long, value_name = "S", default_value = "4", value_parser = seconds)]
+    #[arg(long, value_name = "S", default_value = "4", hide_default_value = true, value_parser = seconds)]
     seconds: f32,
     /// Seconds the finished cloud stays before the loop (--hold 1) [default: 2].
-    #[arg(long, value_name = "S", default_value = "2", value_parser = seconds)]
+    #[arg(long, value_name = "S", default_value = "2", hide_default_value = true, value_parser = seconds)]
     hold: f32,
+    /// Seconds the empty canvas stays before the first word (--delay 1) [default: 0].
+    #[arg(long, value_name = "S", default_value = "0", hide_default_value = true, value_parser = seconds)]
+    delay: f32,
+    /// The GIF plays once and rests on the finished cloud (--once); an MP4 loops if its player
+    /// does.
+    #[arg(long)]
+    once: bool,
     /// Print the final weights and why, then stop (--explain).
     #[arg(long)]
     explain: bool,
@@ -277,6 +284,8 @@ fn write_outputs(cli: &Cli, cloud: &Cloud, seed: u64) -> Result<()> {
             fps: cli.fps.unwrap_or(fps),
             seconds: cli.seconds,
             hold: cli.hold,
+            delay: cli.delay,
+            once: cli.once,
             seed,
         };
         if cli.gif {
@@ -295,7 +304,7 @@ fn write_outputs(cli: &Cli, cloud: &Cloud, seed: u64) -> Result<()> {
     Ok(())
 }
 
-/// Parse `--seconds` and `--hold`: a finite number, 0 or more.
+/// Parse `--seconds`, `--hold` and `--delay`: a finite number, 0 or more.
 fn seconds(text: &str) -> Result<f32, String> {
     match text.parse::<f32>() {
         Ok(value) if value.is_finite() && value >= 0.0 => Ok(value),

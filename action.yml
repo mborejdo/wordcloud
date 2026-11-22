@@ -36,6 +36,12 @@ inputs:
   mp4:
     description: Also write it as <stem>.mp4 and <stem>-dark.mp4 ("true"). Empty = no.
     default: ""
+  once:
+    description: The GIF plays once and rests on the finished cloud ("true"). Empty = it loops.
+    default: ""
+  delay:
+    description: Seconds the empty canvas stays before the first word. Empty = 0.
+    default: ""
   github-user:
     description: Boost words by this user's recent public GitHub languages and topics. Empty = off.
     default: ""
@@ -110,6 +116,8 @@ runs:
         WC_FONT: ${{ inputs.font }}
         WC_GIF: ${{ inputs.gif }}
         WC_MP4: ${{ inputs.mp4 }}
+        WC_ONCE: ${{ inputs.once }}
+        WC_DELAY: ${{ inputs.delay }}
         WC_GITHUB: ${{ inputs.github-user }}
       run: |
         set -euo pipefail
@@ -122,6 +130,8 @@ runs:
         [ -n "$WC_FONT" ] && args+=(--font "$WC_FONT")
         [ "$WC_GIF" = true ] && args+=(--gif)
         [ "$WC_MP4" = true ] && args+=(--mp4)
+        [ "$WC_ONCE" = true ] && args+=(--once)
+        [ -n "$WC_DELAY" ] && args+=(--delay "$WC_DELAY")
         [ -n "$WC_GITHUB" ] && args+=(--github "$WC_GITHUB")
         wordcloud "${args[@]}"
         stem="${WC_OUT%.svg}"

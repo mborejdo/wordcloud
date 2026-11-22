@@ -74,13 +74,16 @@ its size, so the shape fills into its corners.
 
 ```sh
 wordcloud cloud.toml --gif --mp4 --seconds 4 --hold 2
+wordcloud cloud.toml --gif --once --delay 1    # one play, resting on the cloud
 ```
 
 Writes `cloud.gif` and `cloud.mp4` next to the SVGs, and `-dark` variants on GitHub's dark
 background (`#0d1117`; the light ones on white). The words fly in from outside and settle on
 their spots with a damped spring, heaviest first, then the finished cloud holds and the film
-loops. The last frame is the static cloud. `--fps` defaults to 15 for the GIF and 30 for the
-MP4. The same list and seed give the same frames.
+loops. The last frame is the static cloud. `--delay S` holds the empty canvas that long first;
+`--once` writes a GIF that plays once and rests on the cloud (an MP4 loops only if its player
+does). `--fps` defaults to 15 for the GIF and 30 for the MP4. The same list and seed give the
+same frames.
 
 ## Weights
 
@@ -103,6 +106,8 @@ MP4. The same list and seed give the same frames.
     seed: ${{ github.run_number }}   # new layout every run
     # font: fonts/InterDisplay-Black.otf
     # gif: "true"                     # also cloud.gif and cloud-dark.gif
+    # once: "true"                    # the GIF plays once
+    # delay: "1"                      # 1 s on the empty canvas first
 ```
 
 [`examples/profile-workflow.yml`](examples/profile-workflow.yml) reshuffles daily and on list

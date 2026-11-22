@@ -46,7 +46,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
 ureq = { version = "3", features = ["json"], optional = true }
 # The GIF and MP4 writers, from flipcard.
-filmstrip = { git = "https://github.com/mborejdo/flipcard", tag = "v0.3.0", default-features = false, features = ["gif", "mp4"], optional = true }
+filmstrip = { git = "https://github.com/mborejdo/flipcard", tag = "v0.4.0", default-features = false, features = ["gif", "mp4"], optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"

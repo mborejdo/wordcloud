@@ -30,6 +30,8 @@ jobs:
           png: "2"
           seed: ${{ github.run_number }}
           # gif: "true"   # also cloud.gif and cloud-dark.gif, a few MB each; add them below
+          # once: "true"  # the GIF plays once and rests on the cloud
+          # delay: "1"    # 1 s on the empty canvas first
 
       - name: Commit if changed
         run: |

@@ -3,6 +3,24 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## Unreleased
+
+### Added
+
+- `--once`: the GIF plays once and rests on the finished cloud (no NETSCAPE2.0 loop block). An
+  MP4 loops only if its player does.
+- `--delay S`: the empty canvas stays `S` seconds before the first word [default: 0].
+- Action inputs `once` and `delay`. **Library:** `Motion::once` and `Motion::delay`; a `Motion`
+  written out field by field needs them, or `..Motion::default()`.
+
+### Changed
+
+- filmstrip v0.4.0. Without the new flags the GIF and MP4 are byte-identical to 3.2.0.
+
+### Fixed
+
+- `--help` shows the default of `--seconds` and `--hold` once (it was written twice).
+
 ## 3.2.0 - 2026-11-22
 
 ### Added

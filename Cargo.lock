@@ -231,13 +231,14 @@ dependencies = [
 
 [[package]]
 name = "filmstrip"
-version = "0.3.0"
-source = "git+https://github.com/mborejdo/flipcard?tag=v0.3.0#4c63e184e7813f4902f0ac5e9d1fd5d7120305cb"
+version = "0.4.0"
+source = "git+https://github.com/mborejdo/flipcard?tag=v0.4.0#89aefeb71df424a80579440f68521f0f6ac839ac"
 dependencies = [
  "anyhow",
  "bytes",
  "color_quant",
  "gif",
+ "libm",
  "mp4",
  "png 0.17.16",
  "rusty_h264-common",

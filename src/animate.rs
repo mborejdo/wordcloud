@@ -1,5 +1,5 @@
-//! The cloud building up: every word flies in and settles on its spot with a damped spring, then
-//! the finished cloud holds. Written as an animated GIF or an MP4 by flipcard's `filmstrip`.
+//! The cloud building up: after an optional pause on the empty canvas every word flies in and
+//! settles on its spot with a damped spring, then the finished cloud holds. Written as an animated GIF or an MP4 by flipcard's `filmstrip`.
 //!
 //! The spots come from [`crate::generate`], so the words end exactly where the static cloud has
 //! them, and the last frame is the PNG on a background. The spring is integrated at a fixed step
@@ -35,6 +35,11 @@ pub struct Motion {
     pub seconds: f32,
     /// Seconds the finished cloud stays before the film loops.
     pub hold: f32,
+    /// Seconds the empty canvas stays before the first word starts.
+    pub delay: f32,
+    /// The GIF plays once and rests on the finished cloud instead of looping. An MP4 has no loop
+    /// of its own; the player decides.
+    pub once: bool,
     /// Seed for the start points and delays.
     pub seed: u64,
 }
@@ -45,6 +50,8 @@ impl Default for Motion {
             fps: 30,
             seconds: 4.0,
             hold: 2.0,
+            delay: 0.0,
+            once: false,
             seed: 90,
         }
     }
@@ -75,6 +82,8 @@ struct Film {
     fade: usize,
     frames: usize,
     hold: usize,
+    /// Frames the empty canvas stays before the build-up.
+    delay: usize,
 }
 
 impl Film {
@@ -98,6 +107,9 @@ impl Film {
         }
         if !(motion.hold.is_finite() && motion.hold >= 0.0) {
             bail!("hold: expected 0 or more, got \"{}\"", motion.hold);
+        }
+        if !(motion.delay.is_finite() && motion.delay >= 0.0) {
+            bail!("delay: expected 0 or more, got \"{}\"", motion.delay);
         }
         let background: Rgb = background.parse()?;
         let (width, height) = (cloud.width as f32, cloud.height as f32);
@@ -151,6 +163,7 @@ impl Film {
             fade: (FADE * flight * f64::from(STEPS)) as usize,
             frames: (seconds * f64::from(motion.fps)).ceil() as usize + 1,
             hold: (f64::from(motion.hold) * f64::from(motion.fps)).round() as usize,
+            delay: (f64::from(motion.delay) * f64::from(motion.fps)).round() as usize,
         })
     }
 
@@ -201,15 +214,17 @@ impl Film {
         Ok(Frame { width, height, rgb })
     }
 
-    /// Hand every frame to `push` with how often it shows: the build-up once each, the last
-    /// frame also for the hold.
+    /// Hand every frame to `push` with how often it shows: the build-up once each, the first
+    /// frame (the empty canvas) also for the delay, the last also for the hold.
     fn run(&self, mut push: impl FnMut(&Frame, usize) -> Result<()>) -> Result<()> {
         for index in 0..self.frames {
-            let count = if index + 1 == self.frames {
-                1 + self.hold
-            } else {
-                1
-            };
+            let mut count = 1;
+            if index == 0 {
+                count += self.delay;
+            }
+            if index + 1 == self.frames {
+                count += self.hold;
+            }
             push(&self.frame(index)?, count)?;
         }
         Ok(())
@@ -232,13 +247,20 @@ fn spring(omega: f64, steps: usize) -> Vec<f32> {
 }
 
 impl Cloud {
-    /// Write the cloud building up as an animated GIF that loops, on `background` (`#rrggbb`,
+    /// Write the cloud building up as an animated GIF that loops (or plays once with
+    /// [`Motion::once`]), on `background` (`#rrggbb`,
     /// e.g. [`LIGHT_BACKGROUND`]); `dark` picks the `[colours-dark]` palette.
     pub fn gif(&self, motion: &Motion, background: &str, dark: bool) -> Result<Vec<u8>> {
         let film = Film::plan(self, motion, background, dark, false)?;
         let last = film.frame(film.frames - 1)?;
         let (width, height) = film.size;
-        let mut writer = filmstrip::gif::Writer::new(width, height, &[last], film.fps, 255)?;
+        let repeat = if motion.once {
+            filmstrip::gif::Repeat::Once
+        } else {
+            filmstrip::gif::Repeat::Forever
+        };
+        let mut writer =
+            filmstrip::gif::Writer::new(width, height, &[last], film.fps, 255)?.repeat(repeat);
         film.run(|frame, count| writer.push(frame, count))?;
         writer.finish().context("write the gif")
     }
@@ -291,6 +313,7 @@ mod tests {
             seconds: 1.0,
             hold: 0.5,
             seed: 7,
+            ..Motion::default()
         }
     }
 
@@ -336,6 +359,72 @@ mod tests {
         let png = cloud.png(1.0, Some(DARK_BACKGROUND), true).expect("png");
         let decoded = image::load_from_memory(&png).expect("decode").to_rgb8();
         assert_eq!(frames.last().map(|f| &f.0), Some(decoded.as_raw()));
+    }
+
+    /// (delay in cs, width, height) of every frame of `gif`, and whether it has a NETSCAPE2.0
+    /// (loop) block.
+    fn gif_blocks(gif: &[u8]) -> (Vec<(u16, u16, u16)>, bool) {
+        let skip_table = |flags: u8| {
+            if flags & 0x80 == 0 {
+                0
+            } else {
+                3 << ((flags & 7) + 1)
+            }
+        };
+        let sub_blocks = |mut at: usize| {
+            while gif[at] != 0 {
+                at += 1 + usize::from(gif[at]);
+            }
+            at + 1
+        };
+        let le = |at: usize| u16::from_le_bytes([gif[at], gif[at + 1]]);
+        let (mut frames, mut looping, mut delay) = (Vec::new(), false, 0);
+        let mut at = 13 + skip_table(gif[10]);
+        loop {
+            match gif[at] {
+                0x21 => {
+                    if gif[at + 1] == 0xf9 {
+                        delay = le(at + 4);
+                    }
+                    looping |= gif[at + 1] == 0xff && &gif[at + 3..at + 14] == b"NETSCAPE2.0";
+                    at = sub_blocks(at + 2);
+                },
+                0x2c => {
+                    frames.push((delay, le(at + 5), le(at + 7)));
+                    at = sub_blocks(at + 10 + skip_table(gif[at + 9]) + 1);
+                },
+                _ => break,
+            }
+        }
+        (frames, looping)
+    }
+
+    #[test]
+    fn once_writes_no_loop_and_the_delay_holds_the_empty_canvas() {
+        let cloud = cloud(3);
+        let plain = cloud.gif(&motion(), LIGHT_BACKGROUND, false).expect("gif");
+        let (frames, looping) = gif_blocks(&plain);
+        assert!(looping);
+        // 10 fps: the empty canvas shows one tick.
+        assert_eq!(frames[0].0, 10);
+        let once = Motion {
+            once: true,
+            delay: 1.0,
+            ..motion()
+        };
+        let (frames, looping) =
+            gif_blocks(&cloud.gif(&once, LIGHT_BACKGROUND, false).expect("gif"));
+        assert!(!looping);
+        // The empty canvas, then 1x1 frames that only carry time: 1 tick + 1 s.
+        let (width, height) = (cloud.width as u16, cloud.height as u16);
+        assert_eq!((frames[0].1, frames[0].2), (width, height));
+        let first: u16 = frames[0].0
+            + frames[1..]
+                .iter()
+                .take_while(|f| (f.1, f.2) == (1, 1))
+                .map(|f| f.0)
+                .sum::<u16>();
+        assert_eq!(first, 110);
     }
 
     #[test]
