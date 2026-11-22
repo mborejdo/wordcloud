@@ -15,21 +15,21 @@ contrast = 1.5    # size = scale * (weight / 10) ^ contrast
 
 [semantic]
 backend = "offline"   # or "embed": OpenAI-compatible endpoint, sends the word list only
-term_boost = 0.35
-term_cap = 1.0
-mention_boost = 0.15
-mention_cap = 6
-new_weight = 3.0      # raw terms that match nothing become words of this weight
-new_color = "soft"
+term-boost = 0.35
+term-cap = 1.0
+mention-boost = 0.15
+mention-cap = 6
+new-weight = 3.0      # raw terms that match nothing become words of this weight
+new-colour = "soft"
 # endpoint = "http://localhost:11434/v1/embeddings"
 # model = "nomic-embed-text"
 # threshold = 0.8
 # Live boost with `--github <user>`: languages and topics of the most recently pushed public
 # repos. They only boost words above - anything that does not fold into a curated word is ignored.
-github_boost = 0.1    # per recent repo
-github_cap = 0.5
+github-boost = 0.1    # per recent repo
+github-cap = 0.5
 
-[colors]
+[colours]
 accent = "#ff4f00"
 ink = "#111318"
 muted = "#5c6370"
@@ -37,7 +37,7 @@ soft = "#9aa0a8"
 
 # Same names, for cloud-dark.svg - same layout, only the colours differ.
 # Contrast on GitHub dark (#0d1117): accent 5.7:1, ink 15.3:1, muted 7.2:1, soft 5.1:1.
-[colors_dark]
+[colours-dark]
 accent = "#ff4f00"
 ink = "#e6e7ea"
 muted = "#9aa0a8"
@@ -45,37 +45,37 @@ soft = "#7d8590"
 
 [[tier]]
 weight = 10
-color = "accent"
+colour = "accent"
 words = ["Kalsarikännit"]
 
 [[tier]]
 weight = 9.5
-color = "accent"
+colour = "accent"
 words = ["Schnapsidee"]
 
 [[tier]]
 weight = 9
-color = "accent"
+colour = "accent"
 words = ["Kac moralny"]
 
 [[tier]]
 weight = 8
-color = "ink"
+colour = "ink"
 words = ["Kummerspeck", "Poronkusema", "Kombinować", "Verschlimmbessern"]
 
 [[tier]]
 weight = 7
-color = "ink"
+colour = "ink"
 words = ["Innerer Schweinehund", "Hyppytyynytyydytys", "Chrząszcz", "Kopfkino", "Ciepłe kluchy", "Myötähäpeä"]
 
 [[tier]]
 weight = 6
-color = "ink"
+colour = "ink"
 words = ["Drachenfutter", "Hätähousu", "Fajrant", "Warmduscher", "Treppenwitz", "Bratkartoffelverhältnis", "Obciach", "Morkkis"]
 
 [[tier]]
 weight = 5
-color = "muted"
+colour = "muted"
 words = [
   "Schattenparker", "Erklärbär", "Bimber", "Szczebrzeszyn", "Torschlusspanik", "Quatschkopf",
   "Dünnbrettbohrer", "Gapa", "Fremdschämen", "Luftschloss", "Kalsarikahvit", "Ohrwurm",
@@ -83,7 +83,7 @@ words = [
 
 [[tier]]
 weight = 4
-color = "muted"
+colour = "muted"
 words = [
   "Handschuhschneeballwerfer", "Hosentaschenformat", "Załatwić", "Klugscheißer", "Weichei",
   "Lällärit", "Kac", "Zungenbrecher", "Purzelbaum", "Sitzfleisch",
@@ -91,5 +91,5 @@ words = [
 
 [[tier]]
 weight = 3
-color = "soft"
+colour = "soft"
 words = ["Gänsehaut", "Sisu", "Löyly", "Feierabend", "Na zdrowie"]

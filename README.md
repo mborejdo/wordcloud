@@ -41,17 +41,18 @@ shape = "circle"         # or an image path, relative to the list
 
 [[tier]]
 weight = 10              # bigger weight, bigger word
-color = "accent"
+colour = "accent"
 words = ["Kalsarikännit"]
 
 [[tier]]
 weight = 7
-color = "ink"
+colour = "ink"
 words = ["Sisu", "Feierabend", { text = "Linux", variants = ["Debian", "Ubuntu"] }]
 ```
 
 `--fill` copies take a word's `variants` in turn. Full example, with light and dark colours:
-[`examples/cloud.toml`](examples/cloud.toml).
+[`examples/cloud.toml`](examples/cloud.toml). Keys are kebab-case (`term-boost`,
+`colours-dark`); the older `color`, `colors` and snake_case names are still read.
 
 ## Shapes
 
@@ -72,8 +73,9 @@ its size, so the shape fills into its corners.
 - `--corpus file.txt` boosts words per mention in your text, which stays local.
 - `--github user` boosts words matching the user's recent public languages and topics; it adds no
   words.
-- `--scorer embed` (`[semantic] backend = "embed"`) matches terms via an OpenAI-compatible
-  embeddings endpoint, sending only the word list.
+- `--backend embed` (`[semantic] backend = "embed"`) matches terms via an OpenAI-compatible
+  embeddings endpoint, sending only the word list. An API key, if the endpoint needs one, comes
+  from `WORDCLOUD_EMBED_API_KEY` (the older `CLOUD_EMBED_API_KEY` still works).
 
 ## On your GitHub profile
 

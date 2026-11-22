@@ -1,4 +1,4 @@
-//! The word list: a TOML file with `[style]`, `[colors]`, `[colors_dark]`, `[semantic]`,
+//! The word list: a TOML file with `[style]`, `[colours]`, `[colours-dark]`, `[semantic]`,
 //! `[[tier]]`, `[[word]]` and `terms`. A commented example: `examples/cloud.toml`.
 
 use std::collections::BTreeMap;
@@ -20,12 +20,12 @@ const DEFAULT_COLOR: &str = "ink";
 ///
 /// ```
 /// let source: wordcloud::Source = r##"
-///     [colors]
+///     [colours]
 ///     accent = "#ff4f00"
 ///
 ///     [[tier]]
 ///     weight = 10
-///     color = "accent"
+///     colour = "accent"
 ///     words = ["Schnapsidee", { text = "Kac moralny", related = ["hangover"] }]
 /// "##
 /// .parse()?;
@@ -40,11 +40,12 @@ pub struct Source {
     /// Canvas and layout defaults.
     #[serde(default)]
     pub style: Style,
-    /// Colour names to `#rrggbb`, for the light variant.
-    #[serde(default)]
+    /// Colour names to `#rrggbb`, for the light variant: `[colours]` (also read as `[colors]`).
+    #[serde(default, rename = "colours", alias = "colors")]
     pub colors: BTreeMap<String, String>,
-    /// Same names as `colors`, for the dark variant.
-    #[serde(default)]
+    /// Same names as `[colours]`, for the dark variant: `[colours-dark]` (also read as
+    /// `[colors_dark]`).
+    #[serde(default, rename = "colours-dark", alias = "colors_dark")]
     pub colors_dark: BTreeMap<String, String>,
     /// The semantic step: term folding, mention and GitHub boosts.
     #[serde(default)]
@@ -92,8 +93,9 @@ pub struct Style {
 pub struct Tier {
     /// Weight of every word in the tier.
     pub weight: f32,
-    /// Colour name from `[colors]`, or a literal `#rrggbb`. Default: `ink`.
-    #[serde(default)]
+    /// Colour name from `[colours]`, or a literal `#rrggbb`: key `colour` (also read as
+    /// `color`). Default: `ink`.
+    #[serde(default, rename = "colour", alias = "color")]
     pub color: Option<String>,
     /// The words.
     pub words: Vec<TierWord>,
@@ -125,8 +127,9 @@ pub struct Entry {
     pub text: String,
     /// Its weight.
     pub weight: f32,
-    /// Colour name from `[colors]`, or a literal `#rrggbb`. Default: `ink`.
-    #[serde(default)]
+    /// Colour name from `[colours]`, or a literal `#rrggbb`: key `colour` (also read as
+    /// `color`). Default: `ink`.
+    #[serde(default, rename = "colour", alias = "color")]
     pub color: Option<String>,
     /// Aliases and related terms that fold into this word.
     #[serde(default)]
@@ -153,7 +156,7 @@ impl Source {
     }
 
     /// Resolve a colour name for the light variant. `None` means `ink`; a name missing from
-    /// `[colors]` is returned as is, so a literal `#rrggbb` works too.
+    /// `[colours]` is returned as is, so a literal `#rrggbb` works too.
     #[must_use]
     pub fn color(&self, name: Option<&str>) -> String {
         let name = name.unwrap_or(DEFAULT_COLOR);
@@ -235,7 +238,7 @@ impl Source {
         for (colour, word) in colours {
             if colour.parse::<Rgb>().is_err() {
                 findings.push(format!(
-                    "colour `{colour}` (first used by `{word}`) is not in [colors] and not #rrggbb"
+                    "colour `{colour}` (first used by `{word}`) is not in [colours] and not #rrggbb"
                 ));
             }
         }
@@ -279,11 +282,11 @@ mod tests {
     fn words_tiers_and_entries_resolve_in_file_order() {
         let source: Source = r##"
             terms = ["tsc"]
-            [colors]
+            [colours]
             accent = "#ff4f00"
             [[tier]]
             weight = 10
-            color = "accent"
+            colour = "accent"
             words = [{ text = "TypeScript", related = ["TS"] }, "Rust"]
             [[word]]
             text = "rust"
@@ -296,18 +299,18 @@ mod tests {
         assert_eq!(words[0].related, vec!["TS"]);
         assert_eq!(words[2].color, "ink");
         assert_eq!(source.terms, vec!["tsc"]);
-        // No [colors_dark]: falls back to the light colour.
+        // No [colours-dark]: falls back to the light colour.
         assert_eq!(words[0].color_dark, "#ff4f00");
     }
 
     #[test]
     fn lint_duplicates_and_unresolved_colour_reported() {
         let source: Source = r##"
-            [colors]
+            [colours]
             accent = "#ff4f00"
             [[tier]]
             weight = 10
-            color = "accent"
+            colour = "accent"
             words = ["Rust"]
             [[word]]
             text = "rust"
@@ -322,6 +325,62 @@ mod tests {
     }
 
     #[test]
+    fn parse_old_key_names_still_read() {
+        let source: Source = r##"
+            [colors]
+            accent = "#ff4f00"
+            [colors_dark]
+            accent = "#ffffff"
+            [semantic]
+            term_boost = 0.5
+            new_color = "accent"
+            github_cap = 2.0
+            [[tier]]
+            weight = 10
+            color = "accent"
+            words = ["Rust"]
+            [[word]]
+            text = "Sisu"
+            weight = 3
+            color = "accent"
+        "##
+        .parse()
+        .expect("parse");
+        let words = source.words();
+        assert_eq!(words[0].color, "#ff4f00");
+        assert_eq!(words[0].color_dark, "#ffffff");
+        assert_eq!(words[1].color, "#ff4f00");
+        assert!((source.semantic.term_boost - 0.5).abs() < 1e-6);
+        assert!((source.semantic.github_cap - 2.0).abs() < 1e-6);
+        assert_eq!(source.semantic.new_color, "accent");
+    }
+
+    #[test]
+    fn parse_kebab_keys_read() {
+        let source: Source = r##"
+            [colours-dark]
+            ink = "#ffffff"
+            [semantic]
+            term-boost = 0.5
+            term-cap = 2.0
+            mention-boost = 0.25
+            mention-cap = 3
+            new-weight = 4.0
+            new-colour = "ink"
+            github-boost = 0.2
+            github-cap = 1.5
+        "##
+        .parse()
+        .expect("parse");
+        let semantic = &source.semantic;
+        assert_eq!(source.colors_dark["ink"], "#ffffff");
+        assert_eq!(semantic.mention_cap, 3);
+        assert_eq!(semantic.new_color, "ink");
+        assert!((semantic.new_weight - 4.0).abs() < 1e-6);
+        assert!((semantic.github_boost - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
     fn lint_unknown_backend_reported() {
         let source: Source = r#"
             [semantic]
@@ -331,7 +390,7 @@ mod tests {
         .expect("parse");
         assert_eq!(
             source.lint(),
-            vec!["[semantic] unknown semantic backend `magic` (offline | embed)",]
+            vec![r#"[semantic] backend: expected offline or embed, got "magic""#]
         );
     }
 }

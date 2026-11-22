@@ -8,10 +8,9 @@ use anyhow::{Context, Result, bail};
 use rustybuzz::ttf_parser::{GlyphId, OutlineBuilder};
 use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, Transform};
 
+use crate::ParseError;
 use crate::color::Rgb;
 use crate::source::{Style, Word};
-
-// ---------------------------------------------------------------- options
 
 /// Canvas and layout settings for [`generate`].
 #[derive(Debug, Clone, PartialEq)]
@@ -71,7 +70,9 @@ impl Default for Options {
 }
 
 /// The built-in shape names, as an error message lists them.
-const SHAPES: &str = "rect | ellipse | circle";
+const SHAPES: &str = "rect, ellipse or circle";
+/// The same, with an image file, for a shape that may also be a file.
+const SHAPES_OR_IMAGE: &str = "rect, ellipse, circle or an image file";
 
 /// A built-in canvas shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -98,14 +99,14 @@ impl Shape {
 }
 
 impl FromStr for Shape {
-    type Err = anyhow::Error;
+    type Err = ParseError;
 
-    fn from_str(name: &str) -> Result<Self> {
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
         match name {
             "rect" => Ok(Self::Rect),
             "ellipse" => Ok(Self::Ellipse),
             "circle" => Ok(Self::Circle),
-            other => bail!("unknown shape `{other}` ({SHAPES})"),
+            other => Err(ParseError::new("shape", SHAPES, other)),
         }
     }
 }
@@ -151,7 +152,7 @@ impl MaskImage {
         shape.parse().map_or_else(
             |_| {
                 Self::load(&base.join(shape), options, invert)
-                    .with_context(|| format!("unknown shape `{shape}` ({SHAPES} | image file)"))
+                    .with_context(|| ParseError::new("shape", SHAPES_OR_IMAGE, shape))
             },
             |shape| Ok(Self::from_shape(shape, options)),
         )
@@ -214,8 +215,6 @@ impl MaskImage {
     }
 }
 
-// ---------------------------------------------------------------- rng
-
 /// `SplitMix64`: tiny, seedable, good enough for layout jitter.
 #[derive(Debug)]
 struct Rng(u64);
@@ -234,8 +233,6 @@ impl Rng {
         (self.next() >> 40) as f32 / (1u64 << 24) as f32
     }
 }
-
-// ---------------------------------------------------------------- shaping + outlines
 
 #[derive(Debug, Clone, Copy)]
 enum Segment {
@@ -407,8 +404,6 @@ fn svg_path(segments: &[Segment], transformation: &Transformation) -> String {
     data
 }
 
-// ---------------------------------------------------------------- bit sprites + occupancy
-
 /// A word's coverage as rows of 64-px words, LSB = leftmost pixel.
 #[derive(Debug)]
 struct Sprite {
@@ -573,8 +568,6 @@ impl Grid {
         self.bits.iter().map(|b| b.count_ones()).sum()
     }
 }
-
-// ---------------------------------------------------------------- layout
 
 /// A word with everything random already drawn, so every bisection pass sees the same word.
 #[derive(Debug)]
@@ -1035,13 +1028,11 @@ impl Spots {
     }
 }
 
-// ---------------------------------------------------------------- output
-
 impl Cloud {
     /// Write the glyph outlines as SVG paths, one per word, with the word as `<title>`.
     ///
     /// No font is needed to display it. Transparent unless `background` is given; `dark`
-    /// picks the `[colors_dark]` palette.
+    /// picks the `[colours-dark]` palette.
     #[must_use]
     pub fn svg(&self, background: Option<&str>, dark: bool) -> String {
         let (w, h) = (self.width, self.height);
@@ -1345,8 +1336,9 @@ mod tests {
         assert!(MaskImage::open("circle", &dir, &options, false).is_ok());
         let error = MaskImage::open("heart", &dir, &options, false).expect_err("no such shape");
         assert!(
-            format!("{error:#}")
-                .starts_with("unknown shape `heart` (rect | ellipse | circle | image file): read "),
+            format!("{error:#}").starts_with(
+                r#"shape: expected rect, ellipse, circle or an image file, got "heart": read "#
+            ),
             "{error:#}"
         );
     }
@@ -1375,6 +1367,6 @@ mod tests {
         words[0].color = "ink".into();
         let cloud = generate(&words, crate::DEFAULT_FONT, &options(7), None).expect("layout");
         let error = cloud.png(1.0, None, false).expect_err("not #rrggbb");
-        assert_eq!(error.to_string(), "colour `ink` is not #rrggbb");
+        assert_eq!(error.to_string(), r#"colour: expected #rrggbb, got "ink""#);
     }
 }

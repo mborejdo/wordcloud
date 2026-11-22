@@ -5,9 +5,9 @@
 //! for its weight.
 //!
 //! - every raw term is offered to a [`Scorer`]; if it belongs to a head word ("tsc" ->
-//!   TypeScript), the head gets `term_boost` (capped at `term_cap`). Terms that match nothing
+//!   TypeScript), the head gets `term-boost` (capped at `term-cap`). Terms that match nothing
 //!   become new words, and later terms can fold into those - that is the auto clustering.
-//! - every word then gets `mention_boost` per mention in the corpus (capped at `mention_cap`), so
+//! - every word then gets `mention-boost` per mention in the corpus (capped at `mention-cap`), so
 //!   what the text says counts. Longer phrases win: "React Native" is not also "React".
 //!
 //! Backends: [`Offline`] (default; normalisation, light stemming, built-in alias table) and
@@ -22,6 +22,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::ParseError;
 use crate::source::Word;
 
 /// Which [`Scorer`] decides whether a term belongs to a word.
@@ -46,13 +47,13 @@ impl Backend {
 }
 
 impl FromStr for Backend {
-    type Err = anyhow::Error;
+    type Err = ParseError;
 
-    fn from_str(name: &str) -> Result<Self> {
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
         match name {
             "offline" => Ok(Self::Offline),
             "embed" => Ok(Self::Embed),
-            other => bail!("unknown semantic backend `{other}` (offline | embed)"),
+            other => Err(ParseError::new("backend", "offline or embed", other)),
         }
     }
 }
@@ -77,21 +78,27 @@ impl clap::ValueEnum for Backend {
 
 /// The `[semantic]` table.
 #[derive(Debug, Deserialize, Clone)]
-#[serde(default)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct Config {
     /// `offline` (default) or `embed`, see [`Backend`].
     pub backend: String,
     /// Boost a head word gets per term that folds into it.
+    #[serde(alias = "term_boost")]
     pub term_boost: f32,
     /// Most a head word can gain from terms.
+    #[serde(alias = "term_cap")]
     pub term_cap: f32,
     /// Boost per mention in the corpus.
+    #[serde(alias = "mention_boost")]
     pub mention_boost: f32,
     /// Most mentions that count per word.
+    #[serde(alias = "mention_cap")]
     pub mention_cap: u32,
     /// Weight for words that only come from `terms`.
+    #[serde(alias = "new_weight")]
     pub new_weight: f32,
-    /// Colour name for words that only come from `terms`.
+    /// Colour name for words that only come from `terms` (key `new-colour`).
+    #[serde(rename = "new-colour", alias = "new_color")]
     pub new_color: String,
     /// Embed backend: OpenAI-compatible `/v1/embeddings` URL.
     pub endpoint: Option<String>,
@@ -100,8 +107,10 @@ pub struct Config {
     /// Embed backend: minimum cosine similarity for a match.
     pub threshold: f32,
     /// GitHub boost per recent repo that uses a language or topic.
+    #[serde(alias = "github_boost")]
     pub github_boost: f32,
     /// Most a word can gain from GitHub activity.
+    #[serde(alias = "github_cap")]
     pub github_cap: f32,
 }
 
@@ -138,8 +147,6 @@ pub trait Scorer {
     /// Return the head `term` folds into, or `None` if it matches no head.
     fn assign(&self, heads: &[Word], term: &str) -> Option<Match>;
 }
-
-// ---------------------------------------------------------------- normalisation
 
 /// Normalise a term to a match key: lowercase, alphanumerics plus `#` / `+` only.
 ///
@@ -252,8 +259,6 @@ fn builtin(head: &str) -> &'static [&'static str] {
         .map_or(&[], |(_, aliases)| aliases)
 }
 
-// ---------------------------------------------------------------- offline backend
-
 /// Match terms without a network: exact key, `related` in the word list, built-in alias, stem,
 /// then containment ("TypeScript compiler" -> TypeScript).
 #[derive(Debug, Clone, Copy, Default)]
@@ -307,8 +312,6 @@ impl Scorer for Offline {
     }
 }
 
-// ---------------------------------------------------------------- embed backend (opt-in)
-
 /// Match terms offline first; what is left goes by cosine similarity of embeddings. Sends the
 /// word list only, never the corpus.
 pub struct Embed {
@@ -336,10 +339,9 @@ impl Embed {
         heads: &[Word],
         terms: &[String],
     ) -> Result<(String, Value, Vec<String>)> {
-        let endpoint = config
-            .endpoint
-            .clone()
-            .context("[semantic] endpoint is not set (OpenAI-compatible /v1/embeddings)")?;
+        let endpoint = config.endpoint.clone().context(
+            "[semantic] endpoint is not set; give an OpenAI-compatible /v1/embeddings URL",
+        )?;
         let model = config
             .model
             .as_deref()
@@ -384,11 +386,13 @@ impl Embed {
     }
 
     /// Send the request and parse the response (feature `http`). Reads the API key, if any,
-    /// from `$CLOUD_EMBED_API_KEY`.
+    /// from `$WORDCLOUD_EMBED_API_KEY`, else from the older `$CLOUD_EMBED_API_KEY`.
     #[cfg(feature = "http")]
     pub fn fetch(config: &Config, heads: &[Word], terms: &[String]) -> Result<Self> {
         let (endpoint, body, input) = Self::request(config, heads, terms)?;
-        let key = std::env::var("CLOUD_EMBED_API_KEY").ok();
+        let key = std::env::var("WORDCLOUD_EMBED_API_KEY")
+            .or_else(|_| std::env::var("CLOUD_EMBED_API_KEY"))
+            .ok();
         let response = crate::http::post_json(&endpoint, &body, key.as_deref())?;
         Self::from_response(config, input, &response)
     }
@@ -418,8 +422,6 @@ impl Scorer for Embed {
             })
     }
 }
-
-// ---------------------------------------------------------------- weighting
 
 /// One final word and why it weighs what it does.
 #[derive(Debug, Clone)]

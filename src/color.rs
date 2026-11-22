@@ -3,7 +3,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use anyhow::{Context, bail};
+use crate::ParseError;
 
 /// An sRGB colour, written `#rrggbb`.
 ///
@@ -13,8 +13,9 @@ use anyhow::{Context, bail};
 /// let orange: wordcloud::Rgb = "#ff4f00".parse()?;
 /// assert_eq!((orange.red, orange.green, orange.blue), (0xff, 0x4f, 0x00));
 /// assert_eq!(orange.to_string(), "#ff4f00");
-/// assert!("ink".parse::<wordcloud::Rgb>().is_err());
-/// # anyhow::Ok(())
+/// let error = "ink".parse::<wordcloud::Rgb>().unwrap_err();
+/// assert_eq!(error.to_string(), r#"colour: expected #rrggbb, got "ink""#);
+/// # Ok::<(), wordcloud::ParseError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgb {
@@ -27,14 +28,15 @@ pub struct Rgb {
 }
 
 impl FromStr for Rgb {
-    type Err = anyhow::Error;
+    type Err = ParseError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let error = || ParseError::new("colour", "#rrggbb", text);
         let digits = text.trim_start_matches('#');
         if digits.len() != 6 {
-            bail!("colour `{text}` is not #rrggbb");
+            return Err(error());
         }
-        let value = u32::from_str_radix(digits, 16).with_context(|| format!("colour `{text}`"))?;
+        let value = u32::from_str_radix(digits, 16).map_err(|_| error())?;
         let [_, red, green, blue] = value.to_be_bytes();
         Ok(Self { red, green, blue })
     }

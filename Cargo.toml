@@ -39,7 +39,7 @@ rustybuzz = "0.20"
 tiny-skia = "0.12"
 # Mask images.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-clap = { version = "4", features = ["derive"], optional = true }
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
 ureq = { version = "3", features = ["json"], optional = true }
 
 [lints.rust]

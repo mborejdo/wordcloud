@@ -3,6 +3,25 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow semver; a
 change that moves words for the same list and seed counts as breaking.
 
+## Unreleased
+
+### Changed
+
+- `--scorer` is now `--backend`, the same name as `[semantic] backend`; `--scorer` still works.
+- Word list keys are kebab-case and British: `[colours]`, `[colours-dark]`, `colour`,
+  `term-boost`, `term-cap`, `mention-boost`, `mention-cap`, `new-weight`, `new-colour`,
+  `github-boost`, `github-cap`. The old names are still read.
+- The embed API key comes from `WORDCLOUD_EMBED_API_KEY`, else from `CLOUD_EMBED_API_KEY`.
+- A failure prints one line, `wordcloud: <reason>`, and exits 2 (was a debug report and exit 1).
+- Written files print as `<path>  <N> KB` (was `ok  <path>`); the summary lines lose their indent.
+- Messages for a bad value name it: `shape: expected rect, ellipse, circle or an image file, got
+  "x"`.
+- `--help` has examples, exit codes and value names (`--width PX`, `--seed N`).
+- **Library:** `Rgb`, `Shape` and `Backend` parse with the new `ParseError` instead of
+  `anyhow::Error`; `?` into `anyhow::Result` works as before.
+
+Layouts do not move: the same list and seed give byte-identical SVG and PNG.
+
 ## 3.0.1 - 2026-11-17
 
 ### Fixed

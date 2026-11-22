@@ -19,7 +19,7 @@
 //!
 //! ```
 //! let source: wordcloud::Source = r##"
-//!     [colors]
+//!     [colours]
 //!     ink = "#111318"
 //!
 //!     [[tier]]
@@ -61,6 +61,7 @@
 )]
 
 pub mod color;
+mod error;
 pub mod layout;
 pub mod semantic;
 pub mod source;
@@ -71,6 +72,7 @@ pub mod github;
 mod http;
 
 pub use color::Rgb;
+pub use error::ParseError;
 pub use layout::{Cloud, MaskImage, Options, Shape, generate};
 pub use semantic::{Backend, Explained, Scorer};
 pub use source::{Source, Style, Word};
