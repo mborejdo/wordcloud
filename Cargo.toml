@@ -34,7 +34,7 @@ required-features = ["cli", "http"]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.9"
+toml = "1.2"
 # Shaping; re-exports ttf-parser for the glyph outlines.
 rustybuzz = "0.20"
 # Coverage rasterisation and PNG.
