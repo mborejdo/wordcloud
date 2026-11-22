@@ -21,13 +21,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The toolchain (with rustfmt and clippy) comes from rust-toolchain.toml; rustup
       # installs it on the first cargo call.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-deny
       - name: fmt
@@ -48,7 +48,7 @@ jobs:
         run: cargo deny check
       - name: Render the example
         run: cargo run --release --locked -- examples/cloud.toml --out out/cloud.svg --png 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: example-cloud
           path: out/
@@ -57,7 +57,7 @@ jobs:
     # The composite action end to end (prebuilt binary, or a source build before the first release).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./
         with:
           wordlist: examples/cloud.toml
