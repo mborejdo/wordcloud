@@ -1,6 +1,6 @@
 [package]
 name = "wordcloud"
-version = "3.2.0"
+version = "3.3.0"
 edition = "2024"
 # The highest floor any dependency declares (filmstrip). The MSRV-aware resolver holds a
 # dependency back below its own floor, so keep this at or above it.
