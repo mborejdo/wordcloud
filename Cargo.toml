@@ -5,11 +5,13 @@ edition = "2024"
 # The highest floor any dependency declares (image, time). The MSRV-aware resolver holds a
 # dependency back below its own floor, so keep this at or above it.
 rust-version = "1.88"
-authors = ["Michael Borejdo"]
+authors = ["Michael Borejdo <mborejdo@gmail.com>"]
 description = "Word clouds packed by glyph outlines on an Archimedean spiral, as transparent SVG and PNG."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mborejdo/wordcloud"
 homepage = "https://github.com/mborejdo/wordcloud"
+# Installed from git (cargo install --git) or as a release binary, never from crates.io.
+publish = false
 readme = "README.md"
 keywords = ["wordcloud", "svg", "typography", "visualization"]
 categories = ["visualization", "command-line-utilities"]
