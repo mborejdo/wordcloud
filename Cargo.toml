@@ -2,27 +2,29 @@
 name = "wordcloud"
 version = "3.1.0"
 edition = "2024"
-# The highest floor any dependency declares (image, time). The MSRV-aware resolver holds a
+# The highest floor any dependency declares (filmstrip). The MSRV-aware resolver holds a
 # dependency back below its own floor, so keep this at or above it.
-rust-version = "1.88"
+rust-version = "1.92"
 authors = ["Michael Borejdo <mborejdo@gmail.com>"]
-description = "Word clouds packed by glyph outlines on an Archimedean spiral, as transparent SVG and PNG."
+description = "Word clouds packed by glyph outlines on an Archimedean spiral, as transparent SVG and PNG, or built up as GIF and MP4."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mborejdo/wordcloud"
 homepage = "https://github.com/mborejdo/wordcloud"
 # Installed from git (cargo install --git) or as a release binary, never from crates.io.
 publish = false
 readme = "README.md"
-keywords = ["wordcloud", "svg", "typography", "visualization"]
+keywords = ["wordcloud", "svg", "typography", "visualization", "animation"]
 categories = ["visualization", "command-line-utilities"]
 include = ["src/**", "fonts/**", "README.md", "CHANGELOG.md", "LICENSE-*", "Cargo.toml"]
 
 [features]
-default = ["cli", "http"]
+default = ["cli", "http", "animate"]
 # The `wordcloud` binary (it needs `http` too).
-cli = ["dep:clap"]
+cli = ["dep:clap", "animate"]
 # GitHub activity boost and the embeddings backend over HTTP.
 http = ["dep:ureq"]
+# The built-up cloud as an animated GIF and an MP4.
+animate = ["dep:filmstrip"]
 
 [[bin]]
 name = "wordcloud"
@@ -43,6 +45,8 @@ tiny-skia = "0.12"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
 ureq = { version = "3", features = ["json"], optional = true }
+# The GIF and MP4 writers, from flipcard.
+filmstrip = { git = "https://github.com/mborejdo/flipcard", tag = "v0.3.0", default-features = false, features = ["gif", "mp4"], optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"

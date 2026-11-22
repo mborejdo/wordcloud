@@ -217,10 +217,10 @@ impl MaskImage {
 
 /// `SplitMix64`: tiny, seedable, good enough for layout jitter.
 #[derive(Debug)]
-struct Rng(u64);
+pub(crate) struct Rng(pub(crate) u64);
 
 impl Rng {
-    const fn next(&mut self) -> u64 {
+    pub(crate) const fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -229,7 +229,7 @@ impl Rng {
     }
 
     /// Uniform in [0, 1).
-    fn f32(&mut self) -> f32 {
+    pub(crate) fn f32(&mut self) -> f32 {
         (self.next() >> 40) as f32 / (1u64 << 24) as f32
     }
 }
@@ -596,8 +596,15 @@ pub struct Placed {
 }
 
 impl Placed {
+    /// The word's font size, in grid px per font unit: only compared between the words of one
+    /// cloud.
+    #[cfg(feature = "animate")]
+    pub(crate) const fn size(&self) -> f32 {
+        self.transformation.k
+    }
+
     /// The fill colour for the light or the dark variant.
-    fn fill(&self, dark: bool) -> &str {
+    pub(crate) fn fill(&self, dark: bool) -> &str {
         if dark {
             &self.word.color_dark
         } else {
@@ -677,7 +684,8 @@ pub fn generate(
     options: &Options,
     mask: Option<&MaskImage>,
 ) -> Result<Cloud> {
-    let face = rustybuzz::Face::from_slice(font_data, 0).context("not a usable font")?;
+    let face =
+        rustybuzz::Face::from_slice(font_data, 0).context("font: not a TrueType/OpenType font")?;
     let packer = Packer {
         words,
         prepared: prepare(words, &face, options)?,
@@ -1062,6 +1070,14 @@ impl Cloud {
         svg
     }
 
+    /// The outline of `placed` in canvas px.
+    pub(crate) fn path(&self, placed: &Placed) -> Option<tiny_skia::Path> {
+        skia_path(
+            &self.shapes[placed.shape][placed.form].segments,
+            &placed.transformation,
+        )
+    }
+
     /// Render a PNG with alpha at `scale` device px per canvas px.
     ///
     /// Transparent unless `background` is given. Every colour must be `#rrggbb`.
@@ -1082,10 +1098,7 @@ impl Cloud {
             let mut paint = Paint::default();
             paint.set_color_rgba8(rgb.red, rgb.green, rgb.blue, 255);
             paint.anti_alias = true;
-            if let Some(path) = skia_path(
-                &self.shapes[placed.shape][placed.form].segments,
-                &placed.transformation,
-            ) {
+            if let Some(path) = self.path(placed) {
                 pixmap.fill_path(
                     &path,
                     &paint,

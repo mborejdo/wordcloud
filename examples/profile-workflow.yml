@@ -29,6 +29,7 @@ jobs:
           out: cloud.svg
           png: "2"
           seed: ${{ github.run_number }}
+          # gif: "true"   # also cloud.gif and cloud-dark.gif, a few MB each; add them below
 
       - name: Commit if changed
         run: |

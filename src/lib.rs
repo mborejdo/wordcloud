@@ -39,8 +39,10 @@
 //!
 //! - `cli` (default): the `wordcloud` binary, together with `http`.
 //! - `http` (default): `github::activity` and `semantic::Embed::fetch`.
+//! - `animate` (default, and with `cli`): [`Cloud::gif`] and [`Cloud::mp4`], the cloud building
+//!   up word by word.
 //!
-//! As a library, `default-features = false` drops both.
+//! As a library, `default-features = false` drops all three.
 
 // The layout converts between pixel counts (`usize`, `u32`) and geometry (`f32`) on every
 // step. The values are canvas sizes and font units, far from any precision or range limit.
@@ -60,17 +62,23 @@
     reason = "the float operations stay as they are so layouts stay byte-identical"
 )]
 
+use anyhow::Context as _;
+
 pub mod color;
 mod error;
 pub mod layout;
 pub mod semantic;
 pub mod source;
 
+#[cfg(feature = "animate")]
+pub mod animate;
 #[cfg(feature = "http")]
 pub mod github;
 #[cfg(feature = "http")]
 mod http;
 
+#[cfg(feature = "animate")]
+pub use animate::Motion;
 pub use color::Rgb;
 pub use error::ParseError;
 pub use layout::{Cloud, MaskImage, Options, Shape, generate};
@@ -80,6 +88,23 @@ pub use source::{Source, Style, Word};
 /// The bundled font: Bricolage Grotesque 96pt `ExtraBold` (SIL OFL 1.1, see
 /// `fonts/OFL-BricolageGrotesque.txt`).
 pub const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/BricolageGrotesque96pt-ExtraBold.ttf");
+
+/// Read a TTF or OTF file for [`generate`]: its outlines are measured, packed and written as
+/// paths, so the SVG needs no font to display.
+///
+/// # Examples
+///
+/// ```
+/// let error = wordcloud::read_font("Cargo.toml".as_ref()).unwrap_err();
+/// assert_eq!(error.to_string(), "font: Cargo.toml: not a TrueType/OpenType font");
+/// ```
+pub fn read_font(path: &std::path::Path) -> anyhow::Result<Vec<u8>> {
+    let data = std::fs::read(path).with_context(|| format!("font: read {}", path.display()))?;
+    if rustybuzz::Face::from_slice(&data, 0).is_none() {
+        anyhow::bail!("font: {}: not a TrueType/OpenType font", path.display());
+    }
+    Ok(data)
+}
 
 /// Run the semantic step on a whole word list and return the final words, heaviest first.
 ///

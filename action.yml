@@ -1,5 +1,5 @@
 name: wordcloud
-description: Render a TOML word list to a transparent SVG word cloud, a dark variant and optional PNGs.
+description: Render a TOML word list to a transparent SVG word cloud, a dark variant, optional PNGs and an optional animated GIF or MP4.
 author: Michael Borejdo
 branding:
   icon: cloud
@@ -26,6 +26,15 @@ inputs:
     default: ""
   shape:
     description: Shape to fill (rect, ellipse, circle, or an image whose dark pixels take words). Empty = [style] shape, else rect.
+    default: ""
+  font:
+    description: TTF or OTF file the words are set in. Empty = [style] font, else the bundled Bricolage Grotesque.
+    default: ""
+  gif:
+    description: Also write the cloud building up as <stem>.gif and <stem>-dark.gif ("true"). Empty = no.
+    default: ""
+  mp4:
+    description: Also write it as <stem>.mp4 and <stem>-dark.mp4 ("true"). Empty = no.
     default: ""
   github-user:
     description: Boost words by this user's recent public GitHub languages and topics. Empty = off.
@@ -98,6 +107,9 @@ runs:
         WC_HEIGHT: ${{ inputs.height }}
         WC_SEED: ${{ inputs.seed }}
         WC_SHAPE: ${{ inputs.shape }}
+        WC_FONT: ${{ inputs.font }}
+        WC_GIF: ${{ inputs.gif }}
+        WC_MP4: ${{ inputs.mp4 }}
         WC_GITHUB: ${{ inputs.github-user }}
       run: |
         set -euo pipefail
@@ -107,6 +119,9 @@ runs:
         [ -n "$WC_HEIGHT" ] && args+=(--height "$WC_HEIGHT")
         [ -n "$WC_SEED" ] && args+=(--seed "$WC_SEED")
         [ -n "$WC_SHAPE" ] && args+=(--shape "$WC_SHAPE")
+        [ -n "$WC_FONT" ] && args+=(--font "$WC_FONT")
+        [ "$WC_GIF" = true ] && args+=(--gif)
+        [ "$WC_MP4" = true ] && args+=(--mp4)
         [ -n "$WC_GITHUB" ] && args+=(--github "$WC_GITHUB")
         wordcloud "${args[@]}"
         stem="${WC_OUT%.svg}"

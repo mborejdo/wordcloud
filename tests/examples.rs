@@ -40,3 +40,19 @@ fn example_word_list_small_canvas_places_every_word() -> Result<()> {
     assert_ne!(cloud.png(1.0, None, false)?.len(), 0);
     Ok(())
 }
+
+#[test]
+fn a_font_file_sets_the_words_like_the_same_bytes_built_in() -> Result<()> {
+    let path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/fonts/BricolageGrotesque96pt-ExtraBold.ttf"
+    ));
+    let font = wordcloud::read_font(path)?;
+    assert_eq!(font, wordcloud::DEFAULT_FONT);
+    let missing = wordcloud::read_font(Path::new("no-such-font.ttf")).unwrap_err();
+    assert!(
+        format!("{missing:#}").starts_with("font: read no-such-font.ttf: "),
+        "{missing:#}"
+    );
+    Ok(())
+}

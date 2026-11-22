@@ -1,7 +1,8 @@
 # wordcloud
 
 A word list in, a word cloud out: words packed by glyph outline, not bounding box, as light
-and dark SVG or PNG on a transparent background. A CLI and a GitHub Action.
+and dark SVG or PNG on a transparent background, or built up word by word as GIF and MP4. A CLI
+and a GitHub Action.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="examples/cloud-dark.svg">
@@ -25,6 +26,8 @@ wordcloud cloud.toml --png                 # the PNGs too
 wordcloud cloud.toml --shape circle        # rect, ellipse, circle, or an image like star.png
 wordcloud cloud.toml --fill                # small copies of the lighter words fill the gaps
 wordcloud cloud.toml --seed 7              # another layout; same list and seed, same cloud
+wordcloud cloud.toml --font Inter.otf      # another face, TTF or OTF
+wordcloud cloud.toml --gif --mp4           # the cloud building up, see Animation
 wordcloud cloud.toml --explain             # every final weight and why
 ```
 
@@ -37,7 +40,8 @@ wordcloud cloud.toml --explain             # every final weight and why
 width = 1000
 height = 1000
 shape = "circle"         # or an image path, relative to the list
-# also: seed, font, invert, vertical, fill
+font = "fonts/InterDisplay-Black.otf"   # relative to the list; default Bricolage Grotesque
+# also: seed, invert, vertical, fill
 
 [[tier]]
 weight = 10              # bigger weight, bigger word
@@ -66,6 +70,18 @@ Words go where the image is dark (`--invert` flips it). The image is stretched t
 so match its proportions. `--fill` adds up to four copies of each lighter word, at most 70% of
 its size, so the shape fills into its corners.
 
+## Animation
+
+```sh
+wordcloud cloud.toml --gif --mp4 --seconds 4 --hold 2
+```
+
+Writes `cloud.gif` and `cloud.mp4` next to the SVGs, and `-dark` variants on GitHub's dark
+background (`#0d1117`; the light ones on white). The words fly in from outside and settle on
+their spots with a damped spring, heaviest first, then the finished cloud holds and the film
+loops. The last frame is the static cloud. `--fps` defaults to 15 for the GIF and 30 for the
+MP4. The same list and seed give the same frames.
+
 ## Weights
 
 - `terms` fold into their word (`k8s`, `kubectl` count for Kubernetes) by exact match, your
@@ -85,6 +101,8 @@ its size, so the shape fills into its corners.
     wordlist: cloud.toml
     out: cloud.svg
     seed: ${{ github.run_number }}   # new layout every run
+    # font: fonts/InterDisplay-Black.otf
+    # gif: "true"                     # also cloud.gif and cloud-dark.gif
 ```
 
 [`examples/profile-workflow.yml`](examples/profile-workflow.yml) reshuffles daily and on list
@@ -107,7 +125,9 @@ let cloud = wordcloud::generate(&words, wordcloud::DEFAULT_FONT, &options, Some(
 std::fs::write("cloud.svg", cloud.svg(None, false))?;
 ```
 
-`default-features = false` drops the CLI and HTTP parts. The rest is in `cargo doc --open`.
+`default-features = false` drops the CLI, HTTP and animation parts; `features = ["animate"]`
+adds `Cloud::gif` and `Cloud::mp4` back. `wordcloud::read_font` reads a TTF or OTF for
+`generate`. The rest is in `cargo doc --open`.
 
 ## How it works
 
@@ -116,7 +136,9 @@ std::fs::write("cloud.svg", cloud.svg(None, false))?;
 - Largest first, each word spirals out from the centre to the first free spot. A shape marks
   its outside as taken.
 - Bisection finds the largest size at which every word fits.
-- The SVG is glyph paths, no font needed.
+- The SVG is glyph paths, no font needed, whichever font set them.
+- An animation draws the same outlines per frame (tiny-skia) and encodes them with
+  [filmstrip](https://github.com/mborejdo/flipcard) (GIF, pure-Rust H.264).
 
 ## Development
 

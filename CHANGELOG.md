@@ -5,6 +5,22 @@ change that moves words for the same list and seed counts as breaking.
 
 ## Unreleased
 
+### Added
+
+- `--gif` and `--mp4`: the cloud builds up word by word and holds, as `<stem>.gif` and
+  `<stem>.mp4` next to the SVG, dark variants on `#0d1117`. `--fps`, `--seconds`, `--hold`.
+  Action inputs `gif` and `mp4`. **Library:** `Cloud::gif`, `Cloud::mp4`, `Motion`, behind the
+  default `animate` feature.
+- Action input `font`. **Library:** `read_font`.
+
+### Changed
+
+- A font that does not load says so: `font: read <path>: ...`, `font: <path>: not a
+  TrueType/OpenType font`.
+- `rust-version` is 1.92 (filmstrip's floor).
+
+Layouts do not move: the same list and seed give byte-identical SVG and PNG.
+
 ### Fixed
 
 - An empty `WORDCLOUD_EMBED_API_KEY` no longer hides `CLOUD_EMBED_API_KEY`.

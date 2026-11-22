@@ -18,8 +18,9 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use wordcloud::animate::{DARK_BACKGROUND, LIGHT_BACKGROUND};
 use wordcloud::semantic::{Embed, Offline, Scorer};
-use wordcloud::{Backend, Cloud, Explained, MaskImage, Options, Source};
+use wordcloud::{Backend, Cloud, Explained, MaskImage, Motion, Options, Source};
 
 /// What the top of `--help` says.
 const ABOUT: &str = "A TOML word list in, a transparent SVG and PNG out
@@ -33,6 +34,8 @@ Examples:
   wordcloud cloud.toml --shape circle --width 1000 --height 1000 --github octocat
   wordcloud cloud.toml --shape star.png --width 800 --height 800 --fill
   wordcloud cloud.toml --explain                    every final weight and why
+  wordcloud cloud.toml --gif --mp4 --seconds 3      cloud.gif and cloud.mp4 build up, both also dark
+  wordcloud cloud.toml --font fonts/Inter.ttf       measured, packed and drawn in that font
 
 [style] and [semantic] in the word list set the same values; a flag beats both.
 The embed backend reads its API key, if any, from WORDCLOUD_EMBED_API_KEY.
@@ -98,6 +101,21 @@ struct Cli {
     /// backend].
     #[arg(long, alias = "scorer", value_name = "NAME", value_enum)]
     backend: Option<Backend>,
+    /// Also write the cloud building up as a looping GIF, <stem>.gif and <stem>-dark.gif (--gif).
+    #[arg(long)]
+    gif: bool,
+    /// Also write it as an MP4, <stem>.mp4 and <stem>-dark.mp4 (--mp4).
+    #[arg(long)]
+    mp4: bool,
+    /// Frames per second of the GIF and MP4 (--fps 24) [default: 15 for a GIF, 30 for an MP4].
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u16).range(1..=60))]
+    fps: Option<u16>,
+    /// Seconds until the last word has settled (--seconds 3) [default: 4].
+    #[arg(long, value_name = "S", default_value = "4", value_parser = seconds)]
+    seconds: f32,
+    /// Seconds the finished cloud stays before the loop (--hold 1) [default: 2].
+    #[arg(long, value_name = "S", default_value = "2", value_parser = seconds)]
+    hold: f32,
     /// Print the final weights and why, then stop (--explain).
     #[arg(long)]
     explain: bool,
@@ -169,7 +187,7 @@ fn run(cli: &Cli) -> Result<u8> {
         .clone()
         .or_else(|| source.style.font.as_deref().map(|f| base.join(f)))
     {
-        Some(path) => std::fs::read(&path).with_context(|| format!("read {}", path.display()))?,
+        Some(path) => wordcloud::read_font(&path)?,
         None => wordcloud::DEFAULT_FONT.to_vec(),
     };
     // A shape from the command line is relative to where it runs, one from the list to the list.
@@ -182,7 +200,7 @@ fn run(cli: &Cli) -> Result<u8> {
 
     let started = std::time::Instant::now();
     let cloud = wordcloud::generate(&words, &font, &options, mask.as_ref())?;
-    write_outputs(cli, &cloud)?;
+    write_outputs(cli, &cloud, options.seed)?;
     let copies = cloud.placed.iter().filter(|p| p.copy).count();
     let fill = if copies > 0 {
         format!(" + {copies} fill copies")
@@ -229,8 +247,9 @@ fn print_explanation(
     }
 }
 
-/// Write the light SVG, the dark one unless `--no-dark`, and a PNG next to each with `--png`.
-fn write_outputs(cli: &Cli, cloud: &Cloud) -> Result<()> {
+/// Write the light SVG, the dark one unless `--no-dark`, and next to each a PNG with `--png`, a
+/// GIF with `--gif` and an MP4 with `--mp4`.
+fn write_outputs(cli: &Cli, cloud: &Cloud, seed: u64) -> Result<()> {
     if let Some(dir) = cli.out.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
     }
@@ -249,8 +268,41 @@ fn write_outputs(cli: &Cli, cloud: &Cloud) -> Result<()> {
         if let Some(scale) = cli.png {
             write(&svg.with_extension("png"), &cloud.png(scale, None, *dark)?)?;
         }
+        let background = if *dark {
+            DARK_BACKGROUND
+        } else {
+            LIGHT_BACKGROUND
+        };
+        let motion = |fps| Motion {
+            fps: cli.fps.unwrap_or(fps),
+            seconds: cli.seconds,
+            hold: cli.hold,
+            seed,
+        };
+        if cli.gif {
+            write(
+                &svg.with_extension("gif"),
+                &cloud.gif(&motion(15), background, *dark)?,
+            )?;
+        }
+        if cli.mp4 {
+            write(
+                &svg.with_extension("mp4"),
+                &cloud.mp4(&motion(30), background, *dark)?,
+            )?;
+        }
     }
     Ok(())
+}
+
+/// Parse `--seconds` and `--hold`: a finite number, 0 or more.
+fn seconds(text: &str) -> Result<f32, String> {
+    match text.parse::<f32>() {
+        Ok(value) if value.is_finite() && value >= 0.0 => Ok(value),
+        _ => Err(format!(
+            "expected a number of seconds, 0 or more, got \"{text}\""
+        )),
+    }
 }
 
 /// Write one file and print `<path>  <N> KB`.
